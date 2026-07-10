@@ -22,7 +22,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .bootstrap/production-ux.chunk-* > /tmp/production-ux.patch
+          cat .bootstrap/production-ux.chunk-00 > /tmp/production-ux.patch
+          tail -n +2 .bootstrap/production-ux.chunk-01 >> /tmp/production-ux.patch
+          cat .bootstrap/production-ux.chunk-0{2,3,4,5,6,7,8,9} >> /tmp/production-ux.patch
+          cat .bootstrap/production-ux.chunk-1{0,1,2,3,4} >> /tmp/production-ux.patch
           if ! git apply --check --exclude=server/src/index.ts /tmp/production-ux.patch 2> /tmp/apply-error.txt; then
             cat /tmp/apply-error.txt
             mkdir -p reports
@@ -36,6 +39,7 @@ jobs:
           fi
           git apply --exclude=server/src/index.ts /tmp/production-ux.patch
           rm -rf .bootstrap
+          rm -f reports/production-ux-apply-error.txt
           git rm .github/workflows/apply-production-ux.yml
 
       - name: Commit reviewed source
