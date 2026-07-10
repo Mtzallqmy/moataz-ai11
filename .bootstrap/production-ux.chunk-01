@@ -1,0 +1,150 @@
++    localStorage.setItem('moataz_lang', language);
+     localStorage.setItem('moataz_theme', theme);
+-  }, [lang, theme]);
++  }, [language, theme]);
+ 
+-  if (status === 'loading') return <div className="login"><div className="card glass"><p>{t('loading')}</p></div></div>;
+-  if (status === 'unauthenticated') return <Login t={t} />;
+-  return <Dashboard t={t} lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} onLogout={() => { void logout(); }} />;
++  if (status === 'loading') return <div className="login-screen"><div className="login-card"><div className="brand centered"><div className="logo">M</div><strong>Moataz AI</strong></div><div className="loading-line" /><p>{t('loading')}</p></div></div>;
++  if (status === 'unauthenticated') return <Login t={t} language={language} />;
++  return <Dashboard t={t} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} onLogout={() => { void logout(); }} />;
+ }
+ 
+-function Login({ t }: { t: T }) {
++function Login({ t, language }: { t: T; language: Language }) {
+   const { login } = useAuth();
+   const [email, setEmail] = useState('');
+   const [password, setPassword] = useState('');
+@@ -44,194 +44,47 @@ function Login({ t }: { t: T }) {
+     event.preventDefault();
+     setLoading(true);
+     setError('');
+-    try {
+-      await login({ email, password });
+-    } catch (caught) {
+-      setError(errorText(caught));
+-    } finally {
+-      setLoading(false);
+-    }
++    try { await login({ email, password }); }
++    catch (caught) { setError(formatError(caught, language)); }
++    finally { setLoading(false); }
+   };
+ 
+-  return (
+-    <div className="login">
+-      <div className="card glass">
+-        <div className="brand" style={{ justifyContent: 'center' }}><div className="logo">M</div><h2>Moataz AI</h2></div>
+-        <h3 style={{ textAlign: 'center' }}>{t('login')}</h3>
+-        {error && <p className="err" role="alert">{error}</p>}
+-        <form onSubmit={submit} className="form" style={{ gridTemplateColumns: '1fr' }}>
+-          <label>{t('email')}<input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+-          <label>{t('password')}<input type="password" autoComplete="current-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label>
+-          <button type="submit" disabled={loading}>{loading ? '…' : t('login')}</button>
+-        </form>
+-      </div>
+-    </div>
+-  );
++  return <div className="login-screen"><div className="login-card"><div className="brand centered"><div className="logo">M</div><div><strong>Moataz AI</strong><small>Production Agent Platform</small></div></div><div className="login-copy"><h1>{t('login')}</h1><p>{language === 'ar' ? 'أدخل بيانات حساب المدير الذي أنشأته من متغيرات Railway.' : 'Use the administrator credentials configured in Railway.'}</p></div>{error && <pre className="login-error" role="alert">{error}</pre>}<form onSubmit={submit} className="form-grid one-column"><label><span>{t('email')}</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label><span>{t('password')}</span><input type="password" autoComplete="current-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label><button type="submit" disabled={loading}>{loading ? t('loading') : t('login')}</button></form></div></div>;
+ }
+ 
+-type Page = 'home' | 'chat' | 'providers' | 'integrations' | 'terminal' | 'settings';
+-function Dashboard({ t, lang, setLang, theme, setTheme, onLogout }: { t: T; lang: Language; setLang: (value: Language) => void; theme: string; setTheme: (value: string) => void; onLogout: () => void }) {
++const navigation: Array<{ page: Page; label: TranslationKey; icon: string }> = [
++  { page: 'home', label: 'dashboard', icon: '⌂' },
++  { page: 'chat', label: 'chat', icon: '◌' },
++  { page: 'providers', label: 'providers', icon: '✦' },
++  { page: 'integrations', label: 'integrations', icon: '⇄' },
++  { page: 'terminal', label: 'terminal', icon: '›_' },
++  { page: 'settings', label: 'settings', icon: '⚙' }
++];
++
++function Dashboard({ t, language, setLanguage, theme, setTheme, onLogout }: { t: T; language: Language; setLanguage: (value: Language) => void; theme: string; setTheme: (value: string) => void; onLogout: () => void }) {
++  const { request, user } = useAuth();
+   const [page, setPage] = useState<Page>('home');
+-  const nav: Array<[Page, TranslationKey]> = [['home', 'dashboard'], ['chat', 'chat'], ['providers', 'providers'], ['integrations', 'integrations'], ['terminal', 'terminal'], ['settings', 'settings']];
+-  return (
+-    <main>
+-      <aside aria-label="Main navigation">
+-        <div className="brand small"><div className="logo">M</div><strong>Moataz AI</strong></div>
+-        {nav.map(([value, label]) => <button key={value} className={page === value ? 'active' : ''} onClick={() => setPage(value)}>{t(label)}</button>)}
+-        <div style={{ marginTop: 'auto' }}><button className="ghost" onClick={onLogout} style={{ width: '100%' }}>{t('logout')}</button></div>
+-      </aside>
+-      <div className="content">
+-        {page === 'home' && <Home t={t} />}
+-        {page === 'chat' && <ChatPage t={t} />}
+-        {page === 'providers' && <ProvidersPage t={t} />}
+-        {page === 'integrations' && <IntegrationsPage t={t} />}
+-        {page === 'terminal' && <TerminalPage t={t} />}
+-        {page === 'settings' && <SettingsPage t={t} lang={lang} setLang={setLang} theme={theme} setTheme={setTheme} />}
+-      </div>
++  const [menuOpen, setMenuOpen] = useState(false);
++  const navigate = (value: Page) => { setPage(value); setMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); };
++
++  return <div className="app-shell">
++    <header className="mobile-header"><div className="brand"><div className="logo small">M</div><strong>Moataz AI</strong></div><button type="button" className="icon-button menu-button" onClick={() => setMenuOpen((value) => !value)} aria-expanded={menuOpen} aria-label={t('menu')}>☰</button></header>
++    {menuOpen && <button type="button" className="nav-backdrop" onClick={() => setMenuOpen(false)} aria-label={t('close')} />}
++    <aside className={`sidebar ${menuOpen ? 'open' : ''}`}>
++      <div className="brand sidebar-brand"><div className="logo">M</div><div><strong>Moataz AI</strong><small>{user?.name || user?.email}</small></div></div>
++      <nav>{navigation.map((item) => <button type="button" key={item.page} className={page === item.page ? 'active' : ''} onClick={() => navigate(item.page)}><span aria-hidden="true">{item.icon}</span><span>{t(item.label)}</span></button>)}</nav>
++      <div className="sidebar-footer"><div className="user-chip"><span>{user?.name?.slice(0, 1).toUpperCase() || 'U'}</span><div><strong>{user?.name}</strong><small>{user?.email}</small></div></div><button type="button" className="ghost logout-button" onClick={onLogout}>{t('logout')}</button></div>
++    </aside>
++    <main className="main-content">
++      {page === 'home' && <HomePage request={request} t={t} language={language} onNavigate={(next) => navigate(next)} />}
++      {page === 'chat' && <ChatPage request={request} t={t} language={language} onNavigate={() => navigate('providers')} />}
++      {page === 'providers' && <ProvidersPage request={request} t={t} language={language} />}
++      {page === 'integrations' && <IntegrationsPage request={request} t={t} language={language} />}
++      {page === 'terminal' && <TerminalPage request={request} t={t} language={language} />}
++      {page === 'settings' && <SettingsPage request={request} t={t} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} />}
+     </main>
+-  );
+-}
+-
+-function Home({ t }: { t: T }) {
+-  return <div className="grid"><div className="hero"><h1>{t('welcome')}</h1><p>{t('hero')}</p></div></div>;
+-}
+-
+-function ProvidersPage({ t }: { t: T }) {
+-  const { request } = useAuth();
+-  const [providers, setProviders] = useState<ProviderSummary[]>([]);
+-  const [form, setForm] = useState({ name: '', type: 'openai', defaultModel: '', baseUrl: '', apiKey: '' });
+-  const [error, setError] = useState('');
+-  const load = async () => {
+-    try { setProviders((await request<{ providers: ProviderSummary[] }>('/api/providers')).providers); }
+-    catch (caught) { setError(errorText(caught)); }
+-  };
+-  useEffect(() => { void load(); }, []);
+-  const add = async (event: React.FormEvent) => {
+-    event.preventDefault(); setError('');
+-    try {
+-      await request('/api/providers', { method: 'POST', body: JSON.stringify({ ...form, ...(form.baseUrl ? {} : { baseUrl: undefined }) }) });
+-      setForm({ name: '', type: 'openai', defaultModel: '', baseUrl: '', apiKey: '' });
+-      await load();
+-    } catch (caught) { setError(errorText(caught)); }
+-  };
+-  const remove = async (id: string) => { try { await request(`/api/providers/${id}`, { method: 'DELETE' }); await load(); } catch (caught) { setError(errorText(caught)); } };
+-  return (
+-    <section className="tile"><h2>{t('providers')}</h2>{error && <p className="err" role="alert">{error}</p>}
+-      <form onSubmit={add} className="form">
+-        <input aria-label={t('name')} placeholder={t('name')} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required />
+-        <select aria-label={t('type')} value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })}>
+-          {['openai', 'openrouter', 'anthropic', 'gemini', 'groq', 'together', 'deepseek', 'mistral'].map((type) => <option key={type} value={type}>{type}</option>)}
+-        </select>
+-        <input aria-label={t('model')} placeholder={t('model')} value={form.defaultModel} onChange={(event) => setForm({ ...form, defaultModel: event.target.value })} required />
+-        <input aria-label={t('baseUrl')} placeholder={t('baseUrl')} value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} />
+-        <input aria-label={t('apiKey')} type="password" autoComplete="off" placeholder={t('apiKey')} value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} required />
+-        <button type="submit" style={{ gridColumn: '1 / -1' }}>{t('addProvider')}</button>
+-      </form>
+-      <div className="list">{providers.map((provider) => <div key={provider.id} className="row"><div><strong>{provider.name}</strong> – {provider.type} – {provider.default_model}</div><button className="ghost" aria-label="Delete provider" onClick={() => { void remove(provider.id); }}>×</button></div>)}</div>
+-    </section>
+-  );
+-}
+-
+-function IntegrationsPage({ t }: { t: T }) {
+-  const { request } = useAuth();
+-  const [integrations, setIntegrations] = useState<IntegrationSummary[]>([]);
+-  const [form, setForm] = useState({ type: 'github', name: '', token: '' });
+-  const [error, setError] = useState('');
+-  const load = async () => { try { setIntegrations((await request<{ integrations: IntegrationSummary[] }>('/api/integrations')).integrations); } catch (caught) { setError(errorText(caught)); } };
+-  useEffect(() => { void load(); }, []);
