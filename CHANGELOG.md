@@ -2,6 +2,19 @@
 
 All notable changes are documented here. The project version is synchronized with `package.json`.
 
+## Unreleased — production provider and UX hardening
+
+- Separated provider persistence from paid upstream validation; providers are saved as `untested` and tested explicitly.
+- Added structured upstream error mapping for authentication, authorization, billing/credits, missing models, rate limits, timeouts, network failures, and provider outages.
+- Added persisted provider and integration validation status, error code, and validation timestamp through additive compatibility migrations.
+- Added provider update/test/delete behavior and safely detached deleted providers from conversations.
+- Added per-conversation provider, model, and chat/agent mode selection with clearer recovery from stale provider references.
+- Separated GitHub/Telegram token persistence from validation, normalized token formats, and added real identity checks.
+- Restricted tools and Telegram polling to verified integrations and added dynamic Telegram bot reload after validation, edits, or deletion.
+- Added Telegram allowed-chat-ID handling and safer polling startup/error isolation.
+- Reorganized the React interface into focused pages, improved mobile navigation and layout, added status badges, structured error messages, request IDs, and a terminal availability check.
+- Added regression coverage for upstream error classification, provider persistence without upstream billing, integration persistence, token normalization, and Telegram API error payloads.
+
 ## [1.2.0] — 2026-07-10
 
 ### Phase 0 — measurable baseline
