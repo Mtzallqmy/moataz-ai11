@@ -6,6 +6,8 @@ const productionBase = {
   APP_URL: 'https://app.example.com',
   JWT_SECRET: 'j'.repeat(32),
   ENCRYPTION_KEY: 'e'.repeat(32),
+  DATABASE_URL: 'postgresql://user:password@example.com:5432/app',
+  DEFAULT_ADMIN_EMAIL: 'admin@example.com',
   DEFAULT_ADMIN_PASSWORD: 'A-strong-production-password'
 };
 
@@ -22,8 +24,9 @@ const railwayBase = {
 };
 
 describe('environment validation', () => {
-  it('fails closed to APP_URL origin when CORS_ORIGIN is omitted in production', () => {
+  it('uses APP_URL as the production CORS origin when CORS_ORIGIN is omitted', () => {
     const config = loadConfig(productionBase);
+    expect(config.isConfigured).toBe(true);
     expect(config.corsOrigins).toEqual(['https://app.example.com']);
     expect(config.trustProxy).toBe(false);
   });
@@ -32,6 +35,7 @@ describe('environment validation', () => {
     const config = loadConfig(railwayBase);
     expect(config.isRailway).toBe(true);
     expect(config.isProduction).toBe(true);
+    expect(config.isConfigured).toBe(true);
     expect(config.nodeEnv).toBe('production');
     expect(config.configuredNodeEnv).toBe('development');
     expect(config.trustProxy).toBe(1);
@@ -51,12 +55,33 @@ describe('environment validation', () => {
     expect(config.corsOrigins).toEqual(['https://ai.example.com', 'https://dashboard.example.com']);
   });
 
-  it('rejects loopback APP_URL for generic production deployments', () => {
-    expect(() => loadConfig({ ...productionBase, APP_URL: 'http://localhost:8080' })).toThrow(/APP_URL must be a public URL/);
+  it('enters configuration-required mode instead of throwing for missing credentials', () => {
+    const config = loadConfig({
+      NODE_ENV: 'production',
+      RAILWAY_PROJECT_ID: 'project-id',
+      RAILWAY_PUBLIC_DOMAIN: 'moataz-ai11-production.up.railway.app'
+    });
+    expect(config.isConfigured).toBe(false);
+    expect(config.requiredVariables).toEqual(expect.arrayContaining([
+      'JWT_SECRET',
+      'ENCRYPTION_KEY',
+      'DATABASE_URL',
+      'DEFAULT_ADMIN_EMAIL',
+      'DEFAULT_ADMIN_PASSWORD'
+    ]));
   });
 
-  it('rejects weak production secrets', () => {
-    expect(() => loadConfig({ ...productionBase, JWT_SECRET: 'short' })).toThrow(/JWT_SECRET/);
+  it('reports a loopback APP_URL instead of crashing configuration loading', () => {
+    const config = loadConfig({ ...productionBase, APP_URL: 'http://localhost:8080' });
+    expect(config.isConfigured).toBe(false);
+    expect(config.configurationProblems).toContainEqual({ variable: 'APP_URL', code: 'must_be_public' });
+  });
+
+  it('reports weak secrets without generating replacements', () => {
+    const config = loadConfig({ ...productionBase, JWT_SECRET: 'short' });
+    expect(config.isConfigured).toBe(false);
+    expect(config.jwtSecret).toBe('short');
+    expect(config.configurationProblems).toContainEqual({ variable: 'JWT_SECRET', code: 'missing_or_short' });
   });
 
   it('never enables the local shell in production', () => {
