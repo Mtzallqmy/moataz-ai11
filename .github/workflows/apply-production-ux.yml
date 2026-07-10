@@ -4,7 +4,7 @@ on:
   push:
     branches: [feat/production-provider-ux]
     paths:
-      - '.bootstrap/production-ux.tar.gz.b64'
+      - '.bootstrap/production-ux.part-04'
 
 permissions:
   contents: write
@@ -24,7 +24,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base64 --decode .bootstrap/production-ux.tar.gz.b64 > /tmp/production-ux.tar.gz
+          test -f .bootstrap/production-ux.part-00
+          test -f .bootstrap/production-ux.part-04
+          cat .bootstrap/production-ux.part-* > /tmp/production-ux.b64
+          base64 --decode /tmp/production-ux.b64 > /tmp/production-ux.tar.gz
           echo 'b5ea9b8f1162862003a6c328422f511e94fab3c64231502a922fff59bd492db0  /tmp/production-ux.tar.gz' | sha256sum --check --strict
           if tar -tzf /tmp/production-ux.tar.gz | grep -E '(^/|(^|/)\.\.(/|$))'; then
             echo 'Unsafe archive path detected'
