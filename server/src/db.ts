@@ -135,8 +135,12 @@ const baseStatements = [
     base_url TEXT,
     api_key_enc TEXT NOT NULL,
     default_model TEXT NOT NULL,
+    validation_status TEXT NOT NULL DEFAULT 'untested',
+    validation_error_code TEXT,
+    validated_at TIMESTAMP,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`,
   `CREATE TABLE IF NOT EXISTS chats (
@@ -170,8 +174,12 @@ const baseStatements = [
     name TEXT NOT NULL,
     token_enc TEXT NOT NULL,
     meta TEXT,
+    validation_status TEXT NOT NULL DEFAULT 'untested',
+    validation_error_code TEXT,
+    validated_at TIMESTAMP,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`,
   `CREATE TABLE IF NOT EXISTS agent_runs (
@@ -241,8 +249,17 @@ export async function migrate(): Promise<void> {
   await addColumn('agent_runs', 'error_code TEXT');
   await addColumn('agent_runs', 'started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP');
   await addColumn('agent_runs', 'completed_at TIMESTAMP');
+  await addColumn('providers', "validation_status TEXT NOT NULL DEFAULT 'untested'");
+  await addColumn('providers', 'validation_error_code TEXT');
+  await addColumn('providers', 'validated_at TIMESTAMP');
+  await addColumn('providers', 'updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP');
+  await addColumn('integrations', "validation_status TEXT NOT NULL DEFAULT 'untested'");
+  await addColumn('integrations', 'validation_error_code TEXT');
+  await addColumn('integrations', 'validated_at TIMESTAMP');
+  await addColumn('integrations', 'updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP');
 
   await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.2.0', 'phase1-1.2.0']);
+  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.3.0', 'phase1-1.3.0']);
 
   const existing = await get<{ id: string }>('SELECT id FROM users WHERE email = ?', [config.defaultAdminEmail]);
   if (!existing) {
