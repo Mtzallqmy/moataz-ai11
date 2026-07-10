@@ -4,7 +4,7 @@ on:
   push:
     branches: [feat/production-provider-ux]
     paths:
-      - '.bootstrap/production-ux.patch'
+      - '.bootstrap/production-ux.part-02'
 
 permissions:
   contents: write
@@ -24,8 +24,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git apply --check .bootstrap/production-ux.patch
-          git apply .bootstrap/production-ux.patch
+          cat .bootstrap/production-ux.part-* > /tmp/production-ux.patch
+          git apply --check /tmp/production-ux.patch
+          git apply /tmp/production-ux.patch
           rm -rf .bootstrap
           git rm .github/workflows/apply-production-ux.yml
 
