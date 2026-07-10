@@ -1,10 +1,8 @@
 name: Export review source
 
 on:
-  push:
-    branches: [feat/provider-platform-v2]
-    paths:
-      - '.github/workflows/export-source.yml'
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
@@ -15,8 +13,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: feat/provider-platform-v2
       - name: Package source
         shell: bash
         run: |
