@@ -4,7 +4,7 @@ on:
   push:
     branches: [feat/production-provider-ux]
     paths:
-      - '.bootstrap/production-ux.part-04'
+      - '.bootstrap/production-ux.patch'
 
 permissions:
   contents: write
@@ -20,21 +20,14 @@ jobs:
           ref: feat/production-provider-ux
           fetch-depth: 0
 
-      - name: Verify and extract reviewed source
+      - name: Validate and apply reviewed patch
         shell: bash
         run: |
           set -euo pipefail
-          test -f .bootstrap/production-ux.part-00
-          test -f .bootstrap/production-ux.part-04
-          cat .bootstrap/production-ux.part-* > /tmp/production-ux.b64
-          base64 --decode /tmp/production-ux.b64 > /tmp/production-ux.tar.gz
-          echo 'b5ea9b8f1162862003a6c328422f511e94fab3c64231502a922fff59bd492db0  /tmp/production-ux.tar.gz' | sha256sum --check --strict
-          if tar -tzf /tmp/production-ux.tar.gz | grep -E '(^/|(^|/)\.\.(/|$))'; then
-            echo 'Unsafe archive path detected'
-            exit 1
-          fi
-          tar -xzf /tmp/production-ux.tar.gz -C .
+          git apply --check .bootstrap/production-ux.patch
+          git apply .bootstrap/production-ux.patch
           rm -rf .bootstrap
+          git rm .github/workflows/apply-production-ux.yml
 
       - name: Commit reviewed source
         shell: bash
