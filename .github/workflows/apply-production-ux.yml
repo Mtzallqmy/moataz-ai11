@@ -25,8 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           cat .bootstrap/production-ux.chunk-* > /tmp/production-ux.patch
-          git apply --check /tmp/production-ux.patch
-          git apply /tmp/production-ux.patch
+          git apply --3way /tmp/production-ux.patch
           rm -rf .bootstrap
           git rm .github/workflows/apply-production-ux.yml
 
