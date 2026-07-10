@@ -26,7 +26,7 @@ jobs:
           set -euo pipefail
           cat .bootstrap/provider-v2/chunk-* > /tmp/provider-v2.tar.gz.b64
           base64 --decode /tmp/provider-v2.tar.gz.b64 > /tmp/provider-v2.tar.gz
-          echo '6061b489acbee289ee460884023fb3b15678d0f44290af76aeae307063fe7e59  /tmp/provider-v2.tar.gz' | sha256sum --check --strict
+          echo 'a410d35f1ea1086821dddf4e240df44242107d589c8e9dc69fdff4dba3f23ca3  /tmp/provider-v2.tar.gz' | sha256sum --check --strict
           if tar -tzf /tmp/provider-v2.tar.gz | grep -E '(^/|(^|/)\.\.(/|$))'; then
             echo 'Unsafe archive path detected'
             exit 1
