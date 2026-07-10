@@ -497,7 +497,12 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
   app.post('/api/providers/test', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const input = parseInput(providerTestSchema, req.body);
-      const result = await validateProvider(input);
+      const result = await validateProvider({
+        type: input.type,
+        apiKey: input.apiKey,
+        model: input.model,
+        ...(typeof input.baseUrl === 'string' ? { baseUrl: input.baseUrl } : {})
+      });
       res.json({
         ok: true,
         provider: input.type,
@@ -565,7 +570,7 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       const input = parseInput(integrationSchema, req.body);
       const token = normalizeIntegrationToken(input.type, input.token);
       const id = cryptoId();
-      const meta = normalizeIntegrationMeta(input.type, input.meta);
+      const meta = normalizeIntegrationMeta(input.type, input.meta ?? {});
       await run(
         `INSERT INTO integrations
           (id, user_id, type, name, token_enc, meta, validation_status, validation_error_code, validated_at, updated_at)
