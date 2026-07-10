@@ -64,11 +64,23 @@ async function main(): Promise<void> {
   });
 
   await listen(server);
+  for (const code of config.configurationWarnings) {
+    logger.warn('configuration_warning', { code });
+  }
   if (config.telegramPolling) telegram = await startTelegramPolling();
   if (config.allowShellRequested && !config.shellAvailable) {
     logger.warn('shell_disabled', { reason: 'production_or_missing_external_sandbox' });
   }
-  logger.info('server_started', { port: config.port, nodeEnv: config.nodeEnv, shellEnabled: config.shellAvailable });
+  logger.info('server_started', {
+    port: config.port,
+    nodeEnv: config.nodeEnv,
+    configuredNodeEnv: config.configuredNodeEnv,
+    deploymentPlatform: config.deploymentPlatform,
+    appOrigin: config.appOrigin,
+    trustProxy: config.trustProxy,
+    databaseKind: config.databaseKind,
+    shellEnabled: config.shellAvailable
+  });
 }
 
 main().catch(async (error: unknown) => {

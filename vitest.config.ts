@@ -14,7 +14,8 @@ export default defineConfig({
       ENCRYPTION_KEY: 'unit-test-encryption-key-at-least-32-chars',
       DEFAULT_ADMIN_PASSWORD: 'UnitTestPassword123!',
       MAX_FILE_BYTES: '64',
-      ALLOW_SHELL: 'false'
+      ALLOW_SHELL: 'false',
+      TRUST_PROXY: '1'
     },
     coverage: { reporter: ['text', 'json-summary'] }
   }
