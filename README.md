@@ -1,40 +1,183 @@
-# Moataz AI
+<div dir="rtl">
 
-Moataz AI is a TypeScript application with a React/Vite client and an Express server. It supports encrypted AI-provider credentials, chats, GitHub and Telegram integrations, protected workspace file tools, and an optional terminal protocol.
+# معتز AI — Moataz AI
 
-This repository currently contains the completed **phase 0 and phase 1 hardening work**. The Drizzle/PostgreSQL redesign, formal provider tool calling, full streaming agent runtime, and the larger frontend decomposition belong to later phases and are not represented as completed here.
+منصة وكيل ذكاء اصطناعي مبنية باستخدام **TypeScript وReact وExpress**، وتدعم إدارة مزودي النماذج، المحادثات، أدوات الملفات، تكامل GitHub وTelegram، والمصادقة الآمنة.
 
-## Security posture in this revision
+> **حالة المشروع:** يحتوي هذا الإصدار على أعمال التقوية والإصلاح للمرحلتين صفر وواحد. ترحيل قاعدة البيانات الكامل إلى Drizzle/PostgreSQL، والـAgent Loop الإنتاجي المتعدد الخطوات، والـStreaming الرسمي ما تزال ضمن المراحل التالية وليست مكتملة في هذا الإصدار.
 
-- Access tokens are short-lived and held in frontend memory. Refresh tokens are random, hashed in the database, rotated, and delivered through an `HttpOnly`, `SameSite=Strict` cookie (`Secure` in production).
-- `/api/auth/me` is the authoritative session endpoint. Every authenticated request rechecks the user, role, and active status in the database.
-- WebSocket terminal authentication uses a short-lived, single-use ticket. Long-lived JWTs are not placed in WebSocket query strings.
-- Shell execution is disabled by default and unavailable in production. Changing the working directory is not treated as isolation. A future production shell must run in a separate constrained worker/container.
-- File operations reject absolute paths, traversal, null bytes, protected secret paths, symlink traversal, and non-regular files. Writes use a temporary file followed by an atomic rename.
-- Production CORS is allowlist-based and fail-closed. Helmet CSP is enabled in production.
-- Request logs are structured and redact secret-shaped fields. Provider/database internals are not returned directly to clients.
+## التقنيات المستخدمة
 
-## Requirements
+| الجزء | التقنية |
+|---|---|
+| الواجهة | React 19 + Vite 6 + TypeScript |
+| الخادم | Node.js 20 + Express 4 + TypeScript |
+| قاعدة البيانات | PostgreSQL/Supabase للإنتاج، وSQLite للتطوير المحلي المؤقت |
+| الذكاء الاصطناعي | OpenAI-compatible، Anthropic، Gemini |
+| التكاملات | GitHub عبر Octokit وTelegram Bot API |
+| الاختبارات | Vitest + Supertest |
+| النشر | Docker متعدد المراحل + Railway |
+
+## الإمكانيات الحالية
+
+- تسجيل الدخول وإدارة الجلسات باستخدام Access Token قصير العمر وRefresh Token دوّار داخل Cookie آمنة.
+- تشفير مفاتيح مزودي الذكاء الاصطناعي قبل تخزينها.
+- إنشاء المحادثات وإرسال الرسائل واختيار المزود والنموذج.
+- تكاملات GitHub وTelegram.
+- أدوات ملفات مقيدة داخل مساحة عمل المستخدم مع حماية من Path Traversal والروابط الرمزية.
+- WebSocket Terminal باستخدام تذكرة قصيرة العمر وأحادية الاستخدام.
+- تعطيل Shell افتراضيًا ومنعه في بيئة الإنتاج.
+- Health وReadiness endpoints مناسبة لـRailway وDocker.
+- CORS بقائمة سماح، وHelmet/CSP، وRate Limiting، وسجلات منقحة من الأسرار.
+
+## متطلبات التشغيل
 
 - Node.js **20.x**
-- npm with the committed `package-lock.json`
-- Native build prerequisites may be needed for `better-sqlite3` on platforms without a matching prebuilt binary. SQLite remains a temporary phase-1 development adapter; phase 2 is expected to replace the production data layer with Drizzle/PostgreSQL.
+- npm
+- PostgreSQL أو Supabase عند النشر الإنتاجي
+- أدوات بناء native مثل `python3` و`make` و`g++` عند الحاجة إلى بناء `better-sqlite3` محليًا
 
-## Local setup
+## التشغيل المحلي
 
 ```bash
-cp .env.example .env
+# 1) تثبيت الاعتماديات
 npm ci
+
+# 2) إنشاء ملف البيئة
+cp .env.example .env
+
+# 3) تعديل القيم داخل .env ثم تشغيل الترحيلات والفحص
 npm run db:migrate
 npm run db:check
+
+# 4) تشغيل الواجهة والخادم
 npm run dev
 ```
 
-Open `http://localhost:5173`. The Vite development server proxies API and WebSocket traffic to Express.
+بعد التشغيل:
 
-Before committing or deploying, run:
+- الواجهة: `http://localhost:5173`
+- الخادم: `http://localhost:8080`
+- فحص الحياة: `http://localhost:8080/api/health`
+- فحص الجاهزية: `http://localhost:8080/api/ready`
+
+## أوامر المشروع
 
 ```bash
+npm run dev               # تشغيل الواجهة والخادم في وضع التطوير
+npm run lint              # فحص ESLint
+npm run typecheck         # فحص TypeScript للواجهة والخادم
+npm test                  # اختبارات الوحدة
+npm run test:integration  # اختبارات التكامل
+npm run build             # بناء الواجهة والخادم
+npm start                 # تشغيل النسخة المبنية
+npm run db:generate       # معلومات توليد مخطط المرحلة الحالية
+npm run db:migrate        # تطبيق الترحيلات التوافقية
+npm run db:check          # فحص الاتصال والترحيلات
+```
+
+## متغيرات البيئة الأساسية
+
+انسخ `.env.example` ولا ترفع ملف `.env` الحقيقي إلى GitHub.
+
+```env
+NODE_ENV=production
+APP_URL=https://YOUR-SERVICE.up.railway.app
+CORS_ORIGIN=https://YOUR-SERVICE.up.railway.app
+
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:6543/postgres
+DATABASE_SSL_MODE=require
+
+JWT_SECRET=قيمة_عشوائية_قوية_لا_تقل_عن_32_محرفًا
+ENCRYPTION_KEY=قيمة_عشوائية_مختلفة_لا_تقل_عن_32_محرفًا
+
+DEFAULT_ADMIN_EMAIL=admin@example.com
+DEFAULT_ADMIN_PASSWORD=كلمة_مرور_قوية
+
+WORKSPACE_DIR=/app/workspace
+TRUST_PROXY=1
+ALLOW_SHELL=false
+SHELL_SANDBOX_MODE=disabled
+TELEGRAM_POLLING=false
+```
+
+لا تضع مفاتيح مزودي الذكاء الاصطناعي أو GitHub أو Telegram داخل المستودع. تُضاف من إعدادات المنصة أو من متغيرات البيئة عند الحاجة.
+
+## النشر على Railway
+
+1. أنشئ مشروعًا جديدًا في Railway واختر **Deploy from GitHub repo**.
+2. اربط المستودع `Mtzallqmy/moataz-ai11`.
+3. سيستخدم Railway ملف `Dockerfile` الموجود في الجذر.
+4. أضف متغيرات البيئة السابقة من تبويب **Variables**.
+5. استخدم PostgreSQL/Supabase في الإنتاج، ولا تعتمد على SQLite داخل نظام ملفات Railway المؤقت.
+6. بعد النشر افحص:
+
+```text
+GET /api/health
+GET /api/ready
+```
+
+تفاصيل إضافية موجودة في [`DEPLOYMENT.md`](DEPLOYMENT.md).
+
+## بنية المجلدات
+
+```text
+.
+├── client/                    # واجهة React + Vite
+│   └── src/
+│       ├── auth/              # حالة المصادقة
+│       ├── chat/              # منطق رسائل المحادثة
+│       ├── lib/               # API والترجمة
+│       └── styles/            # التنسيقات
+├── server/
+│   ├── src/                   # Express، Auth، DB، LLM، Tools، Telegram، Terminal
+│   └── test/                  # إعدادات اختبارات الخادم
+├── docs/                      # توثيق البروتوكولات
+├── scripts/                   # سكربتات التشغيل والبناء
+├── data/                      # بيانات التطوير المحلية — الملفات الفعلية مستثناة من Git
+├── workspace/                 # مساحة أدوات الملفات — المحتوى الفعلي مستثنى من Git
+├── Dockerfile
+├── railway.json
+├── package.json
+└── .env.example
+```
+
+## أهم مسارات API
+
+| الطريقة | المسار | الوظيفة |
+|---|---|---|
+| GET | `/api/health` | فحص حياة العملية |
+| GET | `/api/ready` | فحص قاعدة البيانات والترحيلات |
+| GET | `/api/system/status` | حالة النظام دون كشف الأسرار |
+| POST | `/api/auth/login` | تسجيل الدخول |
+| POST | `/api/auth/refresh` | تدوير الجلسة |
+| POST | `/api/auth/logout` | تسجيل الخروج |
+| GET | `/api/auth/me` | بيانات المستخدم الحالي |
+| POST | `/api/auth/ws-ticket` | تذكرة WebSocket قصيرة العمر للمشرف |
+
+أي مسار مجهول تحت `/api/*` يعيد JSON 404 ولا يُحوّل إلى واجهة SPA.
+
+## الأمان
+
+- لا توجد أسرار حقيقية أو ملفات `.env` داخل المستودع.
+- Refresh Tokens تُخزن كـhash وتُدوّر عند الاستخدام.
+- مفاتيح المزودات تُشفّر قبل التخزين.
+- كل طلب محمي يعيد التحقق من المستخدم ودوره وحالته.
+- WebSocket لا يضع JWT طويل العمر في رابط الاتصال.
+- عمليات الملفات تمنع المسارات المطلقة، والتجاوز، والملفات السرية، والروابط الرمزية الخارجة.
+- Shell مغلق افتراضيًا وغير متاح في الإنتاج في هذه المرحلة.
+
+## حدود الإصدار الحالي
+
+- طبقة PostgreSQL الحالية طبقة توافق مرحلية؛ الانتقال النهائي إلى Drizzle migrations مؤجل للمرحلة الثانية.
+- Tool Calling الرسمي لكل مزود، والـStreaming، والإلغاء، وحفظ خطوات Agent Loop مؤجلة للمرحلة الثالثة.
+- Shell المحلي ليس Sandbox أمنيًا، ويجب عدم تشغيله في الإنتاج.
+- تشغيل Telegram polling على أكثر من Replica يحتاج Webhook أو Leader Election لمنع التكرار.
+
+## التحقق قبل الدمج أو النشر
+
+```bash
+npm ci
 npm run lint
 npm run typecheck
 npm test
@@ -42,54 +185,10 @@ npm run test:integration
 npm run build
 ```
 
-The production process is:
+## الإصدار
 
-```bash
-npm start
-```
+الإصدار الحالي: **1.2.0**
 
-It executes `node dist/server/index.js`, so `npm run build` must have completed first.
+راجع [`CHANGELOG.md`](CHANGELOG.md) لمعرفة التغييرات، و[`reports/phase-0-1-report-ar.md`](reports/phase-0-1-report-ar.md) لتقرير التنفيذ التفصيلي.
 
-## Database commands
-
-- `npm run db:generate` — reports the phase-1 compatibility migration state. Drizzle generation starts in phase 2.
-- `npm run db:migrate` — applies the idempotent phase-1 compatibility migration.
-- `npm run db:check` — verifies connectivity and migration status.
-
-For local development, `DATABASE_URL=file:./data/moataz.db` selects SQLite. A PostgreSQL URL selects the existing PostgreSQL compatibility adapter. Do not treat this adapter as the final phase-2 schema/migration implementation.
-
-## Important endpoints
-
-- `GET /api/health` — process liveness only.
-- `GET /api/ready` — database connectivity and migration readiness.
-- `GET /api/system/status` — authenticated, secret-free application status.
-- `POST /api/auth/login`, `POST /api/auth/refresh`, `POST /api/auth/logout`, `GET /api/auth/me` — session lifecycle.
-- `POST /api/auth/ws-ticket` — admin-only, single-use terminal ticket; returns `shell_unavailable` unless a permitted local-development mode is active.
-
-Unknown `/api/*` routes always return JSON 404 and are never handled by the SPA fallback.
-
-## Terminal and shell
-
-`ALLOW_SHELL=false` and `SHELL_SANDBOX_MODE=disabled` are the safe defaults. The only phase-1 opt-in is:
-
-```env
-ALLOW_SHELL=true
-SHELL_SANDBOX_MODE=local-development
-NODE_ENV=development
-```
-
-That mode is for a trusted local machine only and is explicitly **not** a security sandbox. Production ignores it. See `docs/terminal-protocol.md` for ticket authentication, JSON events, limits, and close behavior.
-
-## Docker and Railway
-
-The Dockerfile uses Node 20, `npm ci`, a multi-stage build, a non-root runtime user, an HTTP healthcheck, and the direct Node entrypoint. Build and deployment instructions are in `DEPLOYMENT.md`.
-
-## Current phase boundary
-
-The following remain intentionally deferred until phase 2 or later:
-
-- Drizzle schema and generated migrations as the production source of truth.
-- Removal of `better-sqlite3` and the legacy placeholder conversion layer.
-- Complete project/workspace/file relational schema and repository layer.
-- Formal tool calling adapters for each provider, streaming, cancellation, persisted multi-step agent execution, and SSRF-hardened custom providers.
-- Full feature-based React decomposition and phase-4 UX work.
+</div>
