@@ -1,0 +1,38 @@
+name: Cleanup temporary import refs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/cleanup-import.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Delete temporary import branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin --delete bootstrap/import-source || true
+          git push origin --delete source-ready || true
+          git push origin --delete source-ready-copy || true
+
+      - name: Remove one-time cleanup workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/cleanup-import.yml
+          git commit -m "chore: remove one-time import cleanup workflow"
+          git push origin HEAD:main
