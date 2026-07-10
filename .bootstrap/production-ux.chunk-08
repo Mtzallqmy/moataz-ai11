@@ -1,0 +1,150 @@
+ import { appVersion } from './version.js';
++import { upstreamAppError } from './upstream-errors.js';
+ 
+ const defaultBaseUrls: Record<string, string> = {
+   openrouter: 'https://openrouter.ai/api/v1',
+@@ -22,26 +23,53 @@ const defaultBaseUrls: Record<string, string> = {
+   mistral: 'https://api.mistral.ai/v1'
+ };
+ 
++const providerTypeSchema = z.string().trim().toLowerCase().regex(/^[a-z0-9_-]{2,40}$/);
++const optionalBaseUrlSchema = z.preprocess(
++  (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
++  z.string().url().max(2048).optional()
++);
++
+ const providerSchema = z.object({
+   name: z.string().trim().min(1).max(100),
+-  type: z.string().trim().toLowerCase().regex(/^[a-z0-9_-]{2,40}$/),
+-  baseUrl: z.string().url().max(2048).optional(),
+-  apiKey: z.string().min(1).max(20_000),
++  type: providerTypeSchema,
++  baseUrl: optionalBaseUrlSchema,
++  apiKey: z.string().trim().min(1).max(20_000),
+   defaultModel: z.string().trim().min(1).max(200)
+ }).strict();
+ 
++const providerUpdateSchema = z.object({
++  name: z.string().trim().min(1).max(100).optional(),
++  type: providerTypeSchema.optional(),
++  baseUrl: optionalBaseUrlSchema,
++  apiKey: z.string().trim().min(1).max(20_000).optional(),
++  defaultModel: z.string().trim().min(1).max(200).optional()
++}).strict().refine((value) => Object.keys(value).length > 0, { message: 'At least one field is required.' });
++
+ const providerTestSchema = z.object({
+-  type: z.string().trim().toLowerCase().regex(/^[a-z0-9_-]{2,40}$/),
+-  baseUrl: z.string().url().max(2048).optional(),
+-  apiKey: z.string().min(1).max(20_000),
++  type: providerTypeSchema,
++  baseUrl: optionalBaseUrlSchema,
++  apiKey: z.string().trim().min(1).max(20_000),
+   model: z.string().trim().min(1).max(200)
+ }).strict();
+ 
++const integrationTypeSchema = z.enum(['github', 'telegram']);
++const integrationMetaSchema = z.record(z.unknown()).refine((value) => JSON.stringify(value).length <= 4096, { message: 'Integration metadata is too large.' }).optional().default({});
+ const integrationSchema = z.object({
+-  type: z.enum(['github', 'telegram']),
++  type: integrationTypeSchema,
+   name: z.string().trim().min(1).max(100),
+-  token: z.string().min(1).max(20_000),
+-  meta: z.record(z.unknown()).optional().default({})
++  token: z.string().trim().min(1).max(20_000),
++  meta: integrationMetaSchema
++}).strict();
++
++const integrationUpdateSchema = z.object({
++  name: z.string().trim().min(1).max(100).optional(),
++  token: z.string().trim().min(1).max(20_000).optional(),
++  meta: z.record(z.unknown()).optional()
++}).strict().refine((value) => Object.keys(value).length > 0, { message: 'At least one field is required.' });
++
++const integrationTestSchema = z.object({
++  type: integrationTypeSchema,
++  token: z.string().trim().min(1).max(20_000)
+ }).strict();
+ 
+ const chatSchema = z.object({
+@@ -51,6 +79,13 @@ const chatSchema = z.object({
+   mode: z.enum(['chat', 'agent']).default('agent')
+ }).strict();
+ 
++const chatUpdateSchema = z.object({
++  title: z.string().trim().min(1).max(200).optional(),
++  providerId: uuidSchema.nullish(),
++  model: z.string().trim().min(1).max(200).nullish(),
++  mode: z.enum(['chat', 'agent']).optional()
++}).strict().refine((value) => Object.keys(value).length > 0, { message: 'At least one field is required.' });
++
+ const messageSchema = z.object({
+   content: z.string().trim().min(1).max(config.maxMessageChars),
+   idempotencyKey: z.string().trim().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/).optional()
+@@ -65,6 +100,7 @@ const toolRunSchema = z.object({
+ export type RuntimeStatus = {
+   telegram: () => { enabled: boolean; botCount: number };
+   terminal: () => { enabled: boolean; activeConnections: number };
++  reloadTelegram?: () => Promise<{ enabled: boolean; botCount: number }>;
+ };
+ 
+ type ProviderRow = DbRow & {
+@@ -75,12 +111,21 @@ type ProviderRow = DbRow & {
+   base_url: string | null;
+   api_key_enc: string;
+   default_model: string;
++  validation_status: string;
++  validation_error_code: string | null;
++  validated_at: string | null;
+ };
+ 
+ type IntegrationRow = DbRow & {
+-  type: string;
++  id: string;
++  user_id: string;
++  type: 'github' | 'telegram';
++  name: string;
+   token_enc: string;
+   meta: string | null;
++  validation_status: string;
++  validation_error_code: string | null;
++  validated_at: string | null;
+ };
+ 
+ type ChatRow = DbRow & {
+@@ -89,7 +134,7 @@ type ChatRow = DbRow & {
+   title: string;
+   provider_id: string | null;
+   model: string | null;
+-  mode: string;
++  mode: 'chat' | 'agent';
+ };
+ 
+ type MessageRow = DbRow & {
+@@ -115,35 +160,25 @@ export function buildAgentMessages(contextRows: readonly { role: string; content
+ }
+ 
+ export function categorizeProviderError(message: string): { stage: string; suggestion: string } {
+-  const normalized = message.toLowerCase();
+-  if (/unauthorized|invalid api key|incorrect api key|401|access denied/.test(normalized)) {
+-    return { stage: 'authentication', suggestion: 'تحقق من صحة مفتاح API وصلاحياته.' };
+-  }
+-  if (/model not found|unknown model|no such model|does not exist/.test(normalized)) {
+-    return { stage: 'model_not_found', suggestion: 'اختر نموذجًا صحيحًا ومدعومًا من المزود.' };
+-  }
+-  if (/quota|billing|payment|insufficient/.test(normalized)) {
+-    return { stage: 'billing', suggestion: 'تحقق من الرصيد وحالة الفوترة لدى المزود.' };
+-  }
+-  if (/rate limit|too many requests|429/.test(normalized)) {
+-    return { stage: 'rate_limit', suggestion: 'انتظر قليلًا أو استخدم مزودًا آخر.' };
+-  }
+-  if (/invalid url|enotfound|unsupported url|base url/.test(normalized)) {
+-    return { stage: 'base_url', suggestion: 'تحقق من عنوان Base URL.' };
+-  }
+-  if (/connect|network|fetch|econn/.test(normalized)) {
+-    return { stage: 'network', suggestion: 'تحقق من الشبكة وتوفر المزود.' };
+-  }
+-  return { stage: 'unknown', suggestion: 'راجع إعدادات المزود وحاول مرة أخرى.' };
++  const mapped = upstreamAppError('provider', 'provider', new Error(message));
++  const details = mapped.details as { stage?: string } | undefined;
++  const stage = details?.stage ?? 'unknown';
++  const suggestions: Record<string, string> = {
