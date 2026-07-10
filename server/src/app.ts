@@ -22,10 +22,20 @@ function requestId(req: Request): string {
   return supplied && /^[A-Za-z0-9._:-]{8,128}$/.test(supplied) ? supplied : crypto.randomUUID();
 }
 
+function isProbeRequest(req: Request): boolean {
+  return req.path === '/health' || req.path === '/ready';
+}
+
 export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
   const app = express();
-  app.disable('x-powered-by');
+
+  // This must be configured before any middleware reads req.ip. Railway always
+  // places the service behind one trusted reverse-proxy hop.
   app.set('trust proxy', config.trustProxy);
+  if (config.isRailway && (app.get('trust proxy') === false || app.get('trust proxy') === 0)) {
+    throw new Error('Invalid runtime configuration: Railway requires trust proxy to be enabled');
+  }
+  app.disable('x-powered-by');
 
   app.use((req, res, next) => {
     const id = requestId(req);
@@ -78,7 +88,8 @@ export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
       }
       try {
         const normalized = new URL(origin).origin;
-        callback(config.corsOrigins.includes(normalized) ? null : new AppError('origin_not_allowed', 403), config.corsOrigins.includes(normalized));
+        const allowed = config.corsOrigins.includes(normalized);
+        callback(allowed ? null : new AppError('origin_not_allowed', 403), allowed);
       } catch {
         callback(new AppError('origin_not_allowed', 403));
       }
@@ -92,11 +103,14 @@ export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
   app.use(compression());
   app.use(express.json({ limit: '1mb', strict: true }));
 
-  app.use(rateLimit({
+  // Limit API traffic only. Railway health/readiness probes must not consume a
+  // user's quota or trigger IP validation during platform health checks.
+  app.use('/api', rateLimit({
     windowMs: 60_000,
     limit: 240,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
+    skip: isProbeRequest,
     message: { error: 'rate_limited' }
   }));
   app.use(['/api/auth/login', '/api/login'], rateLimit({
