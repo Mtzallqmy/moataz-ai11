@@ -3,8 +3,6 @@ name: Apply production provider and UX source
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-    paths:
-      - '.bootstrap/production-ux.chunk-14'
 
 permissions:
   contents: write
@@ -25,7 +23,8 @@ jobs:
         run: |
           set -euo pipefail
           cat .bootstrap/production-ux.chunk-* > /tmp/production-ux.patch
-          git apply --3way /tmp/production-ux.patch
+          git apply --check --exclude=server/src/index.ts /tmp/production-ux.patch
+          git apply --exclude=server/src/index.ts /tmp/production-ux.patch
           rm -rf .bootstrap
           git rm .github/workflows/apply-production-ux.yml
 
