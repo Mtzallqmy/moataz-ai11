@@ -3,3 +3,4 @@ Retry after validating every archive segment.
 Retry with deterministic Base64 sanitization and integrity checks.
 Generate persistent archive diagnostics before publishing.
 Reconstruct the two missing transport characters using the original SHA-256.
+Repair all three corrupted segments against their verified independent hashes.
