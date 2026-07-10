@@ -1,0 +1,150 @@
++    authentication: 'تحقق من صحة مفتاح API وصلاحياته.',
++    authorization: 'تحقق من صلاحيات المفتاح والوصول إلى النموذج.',
++    billing: 'تحقق من الرصيد وحالة الفوترة لدى المزود.',
++    model_not_found: 'اختر نموذجًا صحيحًا ومدعومًا من المزود.',
++    rate_limit: 'انتظر قليلًا أو استخدم مزودًا آخر.',
++    timeout: 'حاول مجددًا أو ارفع مهلة الاتصال.',
++    network: 'تحقق من عنوان API وتوفر المزود.',
++    invalid_request: 'راجع اسم النموذج وإعدادات الطلب.',
++    service_unavailable: 'المزود غير متاح مؤقتًا.',
++    unknown: 'راجع إعدادات المزود وحاول مرة أخرى.'
++  };
++  return { stage, suggestion: suggestions[stage] ?? suggestions.unknown! };
+ }
+ 
+-async function providerForUser(userId: string, id?: string): Promise<Provider> {
+-  const rows = await query<ProviderRow>(
+-    'SELECT id, user_id, name, type, base_url, api_key_enc, default_model FROM providers WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC',
+-    [userId]
+-  );
+-  const row = rows.find((entry) => id === undefined || entry.id === id);
+-  if (!row) throw new AppError('provider_not_found', 400);
++function providerFromRow(row: ProviderRow): Provider {
+   return {
+     type: row.type,
+     apiKey: decrypt(row.api_key_enc),
+@@ -153,6 +188,49 @@ async function providerForUser(userId: string, id?: string): Promise<Provider> {
+   };
+ }
+ 
++async function providerRowForUser(userId: string, id: string): Promise<ProviderRow | undefined> {
++  return get<ProviderRow>(
++    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
++            validation_status, validation_error_code, validated_at
++     FROM providers WHERE id = ? AND user_id = ? AND is_active = 1`,
++    [id, userId]
++  );
++}
++
++async function providerForUser(userId: string, id?: string): Promise<Provider> {
++  if (id) {
++    const exact = await providerRowForUser(userId, id);
++    if (!exact) throw new AppError('provider_required', 409, 'The selected provider is unavailable.', { reason: 'selected_provider_unavailable', providerId: id });
++    return providerFromRow(exact);
++  }
++  const rows = await query<ProviderRow>(
++    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
++            validation_status, validation_error_code, validated_at
++     FROM providers WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC`,
++    [userId]
++  );
++  if (rows.length === 0) throw new AppError('provider_required', 409, 'Configure an AI provider before sending messages.', { reason: 'none_configured' });
++  if (rows.length > 1) throw new AppError('provider_required', 409, 'Select a provider for this conversation.', { reason: 'selection_required' });
++  return providerFromRow(rows[0]!);
++}
++
++async function resolveProviderForChat(userId: string, chat: ChatRow): Promise<Provider> {
++  if (chat.provider_id) return providerForUser(userId, chat.provider_id);
++  const rows = await query<ProviderRow>(
++    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
++            validation_status, validation_error_code, validated_at
++     FROM providers WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC`,
++    [userId]
++  );
++  if (rows.length === 0) throw new AppError('provider_required', 409, 'Configure an AI provider before sending messages.', { reason: 'none_configured' });
++  if (rows.length > 1) throw new AppError('provider_required', 409, 'Select a provider for this conversation.', { reason: 'selection_required' });
++  const selected = rows[0]!;
++  await run('UPDATE chats SET provider_id = ?, model = COALESCE(model, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [selected.id, selected.default_model, chat.id, userId]);
++  chat.provider_id = selected.id;
++  if (!chat.model) chat.model = selected.default_model;
++  return providerFromRow(selected);
++}
++
+ function safeMeta(value: string | null): Record<string, unknown> {
+   if (!value) return {};
+   try {
+@@ -164,7 +242,7 @@ function safeMeta(value: string | null): Record<string, unknown> {
+ }
+ 
+ async function integrationsForUser(userId: string): Promise<IntegrationCredential[]> {
+-  const rows = await query<IntegrationRow>('SELECT type, token_enc, meta FROM integrations WHERE user_id = ? AND is_active = 1', [userId]);
++  const rows = await query<IntegrationRow>("SELECT id, user_id, type, name, token_enc, meta, validation_status, validation_error_code, validated_at FROM integrations WHERE user_id = ? AND is_active = 1 AND validation_status = 'verified'", [userId]);
+   return rows.map((row) => ({ type: row.type, token: decrypt(row.token_enc), meta: safeMeta(row.meta) }));
+ }
+ 
+@@ -185,21 +263,74 @@ export function parseLegacyToolCall(text: string): { name: string; args: Record<
+   }
+ }
+ 
+-async function validateProvider(input: z.infer<typeof providerTestSchema>): Promise<void> {
++function providerInput(input: z.infer<typeof providerTestSchema>, name = 'Connection test'): Provider {
+   const baseUrl = input.baseUrl ?? defaultBaseUrls[input.type];
+-  await complete(
+-    { type: input.type, apiKey: input.apiKey, ...(baseUrl ? { baseUrl } : {}), defaultModel: input.model, name: 'test' },
+-    [{ role: 'user', content: 'Reply with OK.' }],
+-    input.model
+-  );
++  return {
++    type: input.type,
++    apiKey: input.apiKey,
++    ...(baseUrl ? { baseUrl } : {}),
++    defaultModel: input.model,
++    name
++  };
++}
++
++async function validateProvider(input: z.infer<typeof providerTestSchema>): Promise<{ message: string; model: string }> {
++  return testProviderConnection(providerInput(input), input.model);
+ }
+ 
+-async function validateIntegration(type: 'github' | 'telegram', token: string): Promise<void> {
+-  if (type === 'github') {
+-    await new Octokit({ auth: token }).request('GET /user');
+-    return;
++function normalizeIntegrationMeta(type: 'github' | 'telegram', meta: Record<string, unknown>): Record<string, unknown> {
++  if (type === 'github') return {};
++  const raw = Array.isArray(meta.allowedChatIds)
++    ? meta.allowedChatIds
++    : meta.chatId !== undefined
++      ? [meta.chatId]
++      : [];
++  const allowedChatIds = [...new Set(
++    raw
++      .filter((value) => typeof value === 'string' || typeof value === 'number')
++      .map((value) => String(value).trim())
++      .filter((value) => /^-?\d{1,24}$/.test(value))
++  )].slice(0, 100);
++  return allowedChatIds.length > 0 ? { allowedChatIds, chatId: allowedChatIds[0] } : { allowedChatIds: [] };
++}
++
++export function normalizeIntegrationToken(type: 'github' | 'telegram', rawToken: string): string {
++  const token = rawToken.trim();
++  if (!token || /\s/.test(token) || /^\[.*\]$/.test(token) || /^<.*>$/.test(token)) {
++    throw new AppError(`${type}_token_invalid_format`, 422, 'The token format is invalid.');
++  }
++  if (type === 'telegram' && !/^\d{6,12}:[A-Za-z0-9_-]{20,}$/.test(token)) {
++    throw new AppError('telegram_token_invalid_format', 422, 'Telegram bot tokens must use the BotFather token format.');
++  }
++  if (type === 'github' && token.length < 20) {
++    throw new AppError('github_token_invalid_format', 422, 'The GitHub token is too short.');
++  }
++  return token;
++}
++
++async function validateIntegration(type: 'github' | 'telegram', rawToken: string): Promise<Record<string, unknown>> {
++  const token = normalizeIntegrationToken(type, rawToken);
++  try {
++    if (type === 'github') {
++      const response = await new Octokit({ auth: token }).request('GET /user');
++      return {
++        login: response.data.login,
