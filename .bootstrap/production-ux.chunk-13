@@ -1,0 +1,150 @@
++  const lastMessageAt = new Map<string, number>();
++  bot.on('message', (message: Message) => {
++    void (async () => {
++      if (!message.text) return;
++      const chatId = String(message.chat.id);
++      if (!allowed.has(chatId)) {
++        logger.warn('telegram_unauthorized_chat', { integrationId: row.id, chatId });
++        return;
++      }
++      if (message.text.length > 4000) {
++        await bot.sendMessage(message.chat.id, 'Message is too long.');
++        return;
++      }
++      const now = Date.now();
++      if (now - (lastMessageAt.get(chatId) ?? 0) < 1000) return;
++      lastMessageAt.set(chatId, now);
+ 
+-    bot.on('message', (message: Message) => {
+-      void (async () => {
+-        if (!message.text) return;
+-        const chatId = String(message.chat.id);
+-        if (!allowed.has(chatId)) {
+-          logger.warn('telegram_unauthorized_chat', { integrationId: row.id, chatId });
+-          return;
+-        }
+-        if (message.text.length > 4000) {
+-          await bot.sendMessage(message.chat.id, 'Message is too long.');
++      try {
++        const providers = await query<ProviderRow>(
++          'SELECT type, api_key_enc, base_url, default_model, name FROM providers WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC',
++          [row.user_id]
++        );
++        const provider = providers[0];
++        if (!provider) {
++          await bot.sendMessage(message.chat.id, 'No AI provider is configured.');
+           return;
+         }
+-        const now = Date.now();
+-        if (now - (lastMessageAt.get(chatId) ?? 0) < 1000) return;
+-        lastMessageAt.set(chatId, now);
++        const text = await complete(
++          {
++            type: provider.type,
++            apiKey: decrypt(provider.api_key_enc),
++            ...(provider.base_url ? { baseUrl: provider.base_url } : {}),
++            defaultModel: provider.default_model,
++            name: provider.name
++          },
++          [
++            { role: 'system', content: 'You are Moataz AI Telegram bot. Reply in the user language, briefly and helpfully.' },
++            { role: 'user', content: message.text }
++          ]
++        );
++        await bot.sendMessage(message.chat.id, text.slice(0, 4000));
++      } catch (error) {
++        logger.error('telegram_message_failed', {
++          integrationId: row.id,
++          error: redactText(error instanceof Error ? error.message : String(error))
++        });
++        await bot.sendMessage(message.chat.id, 'Moataz AI could not process this message. Check the configured provider and try again.');
++      }
++    })();
++  });
+ 
+-        try {
+-          const providers = await query<ProviderRow>(
+-            'SELECT type, api_key_enc, base_url, default_model, name FROM providers WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC',
+-            [row.user_id]
+-          );
+-          const provider = providers[0];
+-          if (!provider) {
+-            await bot.sendMessage(message.chat.id, 'No AI provider is configured.');
+-            return;
+-          }
+-          const text = await complete(
+-            {
+-              type: provider.type,
+-              apiKey: decrypt(provider.api_key_enc),
+-              ...(provider.base_url ? { baseUrl: provider.base_url } : {}),
+-              defaultModel: provider.default_model,
+-              name: provider.name
+-            },
+-            [
+-              { role: 'system', content: 'You are Moataz AI Telegram bot. Reply briefly and helpfully.' },
+-              { role: 'user', content: message.text }
+-            ]
+-          );
+-          await bot.sendMessage(message.chat.id, text.slice(0, 4000));
+-        } catch (error) {
+-          logger.error('telegram_message_failed', {
+-            integrationId: row.id,
+-            error: error instanceof Error ? error.message : String(error)
+-          });
+-          await bot.sendMessage(message.chat.id, 'Moataz AI could not process this message. Please try again later.');
+-        }
+-      })();
+-    });
++  bot.on('polling_error', (error) => logger.error('telegram_polling_error', {
++    integrationId: row.id,
++    error: redactText(error.message)
++  }));
+ 
+-    bot.on('polling_error', (error) => logger.error('telegram_polling_error', { integrationId: row.id, error: error.message }));
++  try {
++    await bot.startPolling();
++    return bot;
++  } catch (error) {
++    logger.error('telegram_polling_start_failed', {
++      integrationId: row.id,
++      error: redactText(error instanceof Error ? error.message : String(error))
++    });
++    return undefined;
+   }
++}
++
++export async function startTelegramPolling(): Promise<TelegramController> {
++  const rows = await query<IntegrationRow>("SELECT id, user_id, token_enc, meta FROM integrations WHERE type = ? AND is_active = 1 AND validation_status = 'verified'", ['telegram']);
++  const configured = await Promise.all(rows.map(configureBot));
++  const bots = configured.filter((bot): bot is TelegramBot => bot !== undefined);
+ 
+   return {
+     enabled: bots.length > 0,
+@@ -117,7 +151,7 @@ export async function startTelegramPolling(): Promise<TelegramController> {
+         try {
+           await bot.stopPolling({ cancel: true });
+         } catch (error) {
+-          logger.warn('telegram_stop_failed', { error: error instanceof Error ? error.message : String(error) });
++          logger.warn('telegram_stop_failed', { error: redactText(error instanceof Error ? error.message : String(error)) });
+         }
+       }));
+     }
+diff --git a/server/src/tools.ts b/server/src/tools.ts
+index da42633..13dcb52 100644
+--- a/server/src/tools.ts
++++ b/server/src/tools.ts
+@@ -8,6 +8,7 @@ import { z } from 'zod';
+ import { config } from './config.js';
+ import { AppError } from './errors.js';
+ import { redactSecrets } from './redaction.js';
++import { upstreamAppError } from './upstream-errors.js';
+ 
+ export type IntegrationCredential = {
+   type: string;
+@@ -305,8 +306,12 @@ const definitions: ToolDefinition[] = [
+       const input = githubRepoSchema.parse(args);
+       const integration = requiredIntegration(context, 'github');
+       const [owner, repo] = input.repo.split('/') as [string, string];
+-      const response = await new Octokit({ auth: integration.token }).repos.get({ owner, repo });
+-      return { name: response.data.full_name, description: response.data.description, defaultBranch: response.data.default_branch, stars: response.data.stargazers_count };
++      try {
