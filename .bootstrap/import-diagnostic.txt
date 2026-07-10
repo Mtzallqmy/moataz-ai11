@@ -1,0 +1,26 @@
+generated_at=2026-07-10T14:14:53Z
+decode_status=1
+xz_status=1
+expected_sha256=f6ef17b370a3a5bcfc456512ca0faeda79197ec8f9f6c2f487317c2222a732c3
+actual_sha256=a2244fb4c4d7831c274555971aea6999c726045058a400ec7c03c71726d03b9d
+sanitized_base64_bytes=134566
+decoded_archive_bytes=100923
+
+segment_sizes:
+ 20000 .bootstrap/xz-000
+ 20000 .bootstrap/xz-001
+ 20000 .bootstrap/xz-002
+ 20000 .bootstrap/xz-003
+ 19999 .bootstrap/xz-004
+ 19999 .bootstrap/xz-005
+ 14568 .bootstrap/xz-006
+134566 total
+
+segment_sha256:
+a38c51242376e9ba6f715fcf5da4f688746829c67084061835ee8fdd0fe0dc6d  .bootstrap/xz-000
+150eb9361ab9a65a28a842db5b8fff04b3238940b294ac0ed3e40d6c0998cda2  .bootstrap/xz-001
+d99d00f16a2a2fc5da9c56507837dc7f5007513378228a777e1a86c15c9b9a05  .bootstrap/xz-002
+deef28304c39aa081b5649e7ffaefe02a44a8f70fd41f0aa9809c0a618adddd3  .bootstrap/xz-003
+3898e6e0f39dbe466c614434f977c35433cca9dae3741055410288bee1590bce  .bootstrap/xz-004
+5300d3893e96cda5a325dab0a348e14951d371afea63390e35abfb39badaa98a  .bootstrap/xz-005
+5a70343d6b29f3a1d2033c77fca11afafb3f8cf279d9f22c46dce063afab6c25  .bootstrap/xz-006
