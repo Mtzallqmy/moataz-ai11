@@ -1,0 +1,41 @@
+name: Fix integration UI TypeScript diagnostic
+
+on:
+  push:
+    branches: [feat/production-provider-ux]
+    paths:
+      - '.github/workflows/fix-integration-ui-type.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/production-provider-ux
+      - name: Apply exact fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('client/src/pages/IntegrationsPage.tsx')
+          text = path.read_text()
+          old = """          const integrationIdentity = integration.meta?.identity;\n          return <article className=\"resource-card\" key={integration.id}><div className=\"resource-main\"><div className=\"resource-title\"><strong>{integration.name}</strong><StatusBadge status={integration.validation_status} t={t} /></div><p>{integration.type}</p>{integrationIdentity && typeof integrationIdentity === 'object' && !Array.isArray(integrationIdentity) && <small>{String((integrationIdentity as Record<string, unknown>).username ?? (integrationIdentity as Record<string, unknown>).login ?? '')}</small>}{integration.type === 'telegram' && chatIdsFrom(integration) && <small>{chatIdsFrom(integration)}</small>}{integration.validation_error_code && <code>{integration.validation_error_code}</code>}</div><div className=\"resource-actions\"><button type=\"button\" className=\"secondary\" onClick={() => { void testSaved(integration.id); }} disabled={busy !== null}><SpinnerLabel active={busy === `test-${integration.id}`} activeText={t('testing')} idleText={t('testConnection')} /></button><button type=\"button\" className=\"ghost\" onClick={() => edit(integration)} disabled={busy !== null}>{t('edit')}</button><button type=\"button\" className=\"danger ghost\" onClick={() => { void remove(integration.id); }} disabled={busy !== null}>{t('delete')}</button></div></article>;"""
+          new = """          const integrationIdentity = integration.meta?.identity;\n          const identityLabel = integrationIdentity !== null && typeof integrationIdentity === 'object' && !Array.isArray(integrationIdentity)\n            ? String((integrationIdentity as Record<string, unknown>).username ?? (integrationIdentity as Record<string, unknown>).login ?? '')\n            : '';\n          return <article className=\"resource-card\" key={integration.id}><div className=\"resource-main\"><div className=\"resource-title\"><strong>{integration.name}</strong><StatusBadge status={integration.validation_status} t={t} /></div><p>{integration.type}</p>{identityLabel && <small>{identityLabel}</small>}{integration.type === 'telegram' && chatIdsFrom(integration) && <small>{chatIdsFrom(integration)}</small>}{integration.validation_error_code && <code>{integration.validation_error_code}</code>}</div><div className=\"resource-actions\"><button type=\"button\" className=\"secondary\" onClick={() => { void testSaved(integration.id); }} disabled={busy !== null}><SpinnerLabel active={busy === `test-${integration.id}`} activeText={t('testing')} idleText={t('testConnection')} /></button><button type=\"button\" className=\"ghost\" onClick={() => edit(integration)} disabled={busy !== null}>{t('edit')}</button><button type=\"button\" className=\"danger ghost\" onClick={() => { void remove(integration.id); }} disabled={busy !== null}>{t('delete')}</button></div></article>;"""
+          if old not in text:
+              raise SystemExit('integration identity target not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git rm .github/workflows/fix-integration-ui-type.yml
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: render integration identity with a typed label'
+          git push origin HEAD:feat/production-provider-ux
