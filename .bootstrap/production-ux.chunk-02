@@ -1,0 +1,150 @@
+-  const add = async (event: React.FormEvent) => { event.preventDefault(); try { await request('/api/integrations', { method: 'POST', body: JSON.stringify(form) }); setForm({ type: 'github', name: '', token: '' }); await load(); } catch (caught) { setError(errorText(caught)); } };
+-  const remove = async (id: string) => { try { await request(`/api/integrations/${id}`, { method: 'DELETE' }); await load(); } catch (caught) { setError(errorText(caught)); } };
+-  return (
+-    <section className="tile"><h2>{t('integrations')}</h2>{error && <p className="err" role="alert">{error}</p>}
+-      <form onSubmit={add} className="form"><select value={form.type} onChange={(event) => setForm({ ...form, type: event.target.value })}><option value="github">GitHub</option><option value="telegram">Telegram</option></select><input placeholder={t('name')} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /><input type="password" autoComplete="off" placeholder="Token" value={form.token} onChange={(event) => setForm({ ...form, token: event.target.value })} required /><button type="submit" style={{ gridColumn: '1 / -1' }}>{t('addIntegration')}</button></form>
+-      <div className="list">{integrations.map((integration) => <div key={integration.id} className="row"><div><strong>{integration.name}</strong> – {integration.type}</div><button className="ghost" aria-label="Delete integration" onClick={() => { void remove(integration.id); }}>×</button></div>)}</div>
+-    </section>
+-  );
+-}
+-
+-function ToolTimeline({ calls }: { calls: ToolCall[] }) {
+-  if (calls.length === 0) return null;
+-  return <div className="tool-timeline">{calls.map((call) => {
+-    const duration = call.startedAt && call.finishedAt ? Math.max(0, Date.parse(call.finishedAt) - Date.parse(call.startedAt)) : undefined;
+-    return <div key={call.id} className="tool-card"><strong>{call.name}</strong> <span>{call.status}</span>{duration !== undefined && <small>{duration} ms</small>}<pre>{JSON.stringify(call.arguments, null, 2)}</pre>{call.result !== undefined && <pre>{JSON.stringify(call.result, null, 2)}</pre>}{call.error && <p className="err">{call.error.code}: {call.error.message}</p>}</div>;
+-  })}</div>;
+-}
+-
+-function ChatPage({ t }: { t: T }) {
+-  const { request } = useAuth();
+-  const [chats, setChats] = useState<ChatSummary[]>([]);
+-  const [current, setCurrent] = useState<string | null>(null);
+-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+-  const [input, setInput] = useState('');
+-  const [loading, setLoading] = useState(false);
+-  const [error, setError] = useState('');
+-  const messagesRef = useRef<HTMLDivElement>(null);
+-  const loadChats = async () => { try { setChats((await request<{ chats: ChatSummary[] }>('/api/chats')).chats); } catch (caught) { setError(errorText(caught)); } };
+-  const loadMessages = async (id: string) => { try { setMessages((await request<{ messages: ChatMessage[] }>(`/api/chats/${id}/messages`)).messages); } catch (caught) { setError(errorText(caught)); } };
+-  useEffect(() => { void loadChats(); }, []);
+-  useEffect(() => { if (messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight; }, [messages]);
+-  const createChat = async () => { try { const response = await request<{ id: string }>('/api/chats', { method: 'POST', body: '{}' }); await loadChats(); setCurrent(response.id); setMessages([]); } catch (caught) { setError(errorText(caught)); } };
+-  const send = async () => {
+-    if (!current || !input.trim() || loading) return;
+-    const content = input.trim();
+-    const temporaryId = `temp-${crypto.randomUUID()}`;
+-    const key = crypto.randomUUID();
+-    setInput(''); setError(''); setLoading(true);
+-    setMessages((previous) => [...previous, { id: temporaryId, role: 'user', content, tool_calls: [] }]);
+-    try {
+-      const response = await request<{ userMessage?: ChatMessage; message: ChatMessage }>(`/api/chats/${current}/messages`, {
+-        method: 'POST', headers: { 'Idempotency-Key': key }, body: JSON.stringify({ content })
+-      });
+-      setMessages((previous) => reconcileMessageResponse(previous, temporaryId, response.userMessage, response.message));
+-      await loadChats();
+-    } catch (caught) {
+-      setMessages((previous) => previous.filter((message) => message.id !== temporaryId));
+-      setError(errorText(caught));
+-    } finally { setLoading(false); }
+-  };
+-  return (
+-    <div className="chat"><div className="chats"><button className="ghost" onClick={() => { void createChat(); }}>{t('newChat')}</button>{chats.map((chat) => <button key={chat.id} className={current === chat.id ? 'active' : 'ghost'} onClick={() => { setCurrent(chat.id); void loadMessages(chat.id); }}>{chat.title || 'Chat'}</button>)}</div>
+-      <div className="messages" ref={messagesRef}>{error && <p className="err" role="alert">{error}</p>}{current === null && <p>{t('newChat')}</p>}{messages.map((message) => <div key={message.id} className={`msg ${message.role}`}><pre>{message.content}</pre><ToolTimeline calls={Array.isArray(message.tool_calls) ? message.tool_calls : []} /></div>)}{loading && <p>…</p>}{current && <div className="composer"><textarea placeholder={t('message')} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button onClick={() => { void send(); }} disabled={!input.trim() || loading}>{t('send')}</button></div>}</div>
+-    </div>
+-  );
+-}
+-
+-type TerminalEvent = { type: 'session_started'; userId: string } | { type: 'output'; stream: 'stdout' | 'stderr'; data: string } | { type: 'process_exit'; code: number | null; signal: string | null } | { type: 'error'; code: string };
+-function TerminalPage({ t }: { t: T }) {
+-  const { request } = useAuth();
+-  const [output, setOutput] = useState('');
+-  const [command, setCommand] = useState('');
+-  const socketRef = useRef<WebSocket | null>(null);
+-  const terminalRef = useRef<HTMLPreElement>(null);
+-  useEffect(() => {
+-    let cancelled = false;
+-    void (async () => {
+-      try {
+-        const response = await request<{ ticket: string }>('/api/auth/ws-ticket', { method: 'POST', body: '{}' });
+-        if (cancelled) return;
+-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+-        const socket = new WebSocket(`${protocol}://${window.location.host}/ws/terminal?ticket=${encodeURIComponent(response.ticket)}`);
+-        socketRef.current = socket;
+-        socket.onmessage = (event) => {
+-          try {
+-            const message = JSON.parse(String(event.data)) as TerminalEvent;
+-            if (message.type === 'output') setOutput((previous) => previous + message.data);
+-            else if (message.type === 'error') setOutput((previous) => `${previous}\n[${message.code}]`);
+-            else if (message.type === 'process_exit') setOutput((previous) => `${previous}\n[process exited: ${message.code ?? message.signal ?? 'unknown'}]`);
+-          } catch { setOutput((previous) => `${previous}\n[invalid server event]`); }
+-        };
+-        socket.onclose = (event) => setOutput((previous) => `${previous}\n[Disconnected: ${event.reason || event.code}]`);
+-      } catch (caught) { setOutput(`[${errorText(caught)}]`); }
+-    })();
+-    return () => { cancelled = true; socketRef.current?.close(1000, 'page_closed'); };
+-  }, [request]);
+-  useEffect(() => { if (terminalRef.current) terminalRef.current.scrollTop = terminalRef.current.scrollHeight; }, [output]);
+-  const send = () => { const socket = socketRef.current; if (socket?.readyState === WebSocket.OPEN && command.trim()) { socket.send(JSON.stringify({ type: 'input', data: `${command}\n` })); setCommand(''); } };
+-  return <section className="tile"><h2>{t('terminal')}</h2><pre className="term" ref={terminalRef}>{output}</pre><div className="terminal-input"><input aria-label="Terminal input" value={command} onChange={(event) => setCommand(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); send(); } }} /><button onClick={send} disabled={!command.trim()}>Send</button></div></section>;
+-}
+-
+-function SettingsPage({ t, lang, setLang, theme, setTheme }: { t: T; lang: Language; setLang: (value: Language) => void; theme: string; setTheme: (value: string) => void }) {
+-  return <section className="tile"><h2>{t('settings')}</h2><div className="form" style={{ gridTemplateColumns: '1fr' }}><label>{t('language')}<select value={lang} onChange={(event) => setLang(event.target.value as Language)}><option value="ar">العربية</option><option value="en">English</option></select></label><label>{t('theme')}<select value={theme} onChange={(event) => setTheme(event.target.value)}><option value="dark">{t('dark')}</option><option value="light">{t('light')}</option></select></label></div></section>;
++    <nav className="bottom-nav" aria-label="Mobile navigation">{navigation.slice(0, 5).map((item) => <button type="button" key={item.page} className={page === item.page ? 'active' : ''} onClick={() => navigate(item.page)}><span>{item.icon}</span><small>{t(item.label)}</small></button>)}</nav>
++  </div>;
+ }
+ 
+ const container = document.getElementById('root');
+diff --git a/client/src/styles/app.css b/client/src/styles/app.css
+index c288333..1453b98 100644
+--- a/client/src/styles/app.css
++++ b/client/src/styles/app.css
+@@ -1,267 +1,279 @@
+ :root {
+-  font-family: Cairo, Inter, system-ui;
+-  --bg: #070b18;
+-  --panel: rgba(255,255,255,0.08);
+-  --txt: #f7f7fb;
+-  --mut: #9da8c7;
+-  --acc: #7c5cff;
+-  --acc2: #00d4ff;
+-  --border: rgba(255,255,255,0.14);
++  font-family: Cairo, "Noto Sans Arabic", "IBM Plex Sans Arabic", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
++  color-scheme: dark;
++  --bg: #070b14;
++  --bg-soft: #0d1322;
++  --panel: rgba(18, 26, 43, 0.86);
++  --panel-solid: #121a2b;
++  --panel-2: rgba(28, 38, 60, 0.86);
++  --text: #f8fafc;
++  --muted: #9aa7bb;
++  --primary: #7c5cff;
++  --primary-2: #12bff4;
++  --success: #2dd4a8;
++  --warning: #f6b84b;
++  --danger: #fb7185;
++  --border: rgba(148, 163, 184, 0.18);
++  --border-strong: rgba(148, 163, 184, 0.32);
++  --shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
++  --radius-lg: 24px;
++  --radius-md: 16px;
++  --radius-sm: 12px;
+ }
+-body[data-theme="light"] {
+-  --bg: #f5f7ff;
+-  --panel: rgba(255,255,255,0.82);
+-  --txt: #101426;
+-  --mut: #586179;
+-  --border: rgba(16,20,38,0.12);
++
++:root[data-theme="light"] {
++  color-scheme: light;
++  --bg: #eef2f8;
++  --bg-soft: #e5ebf5;
++  --panel: rgba(255, 255, 255, 0.9);
++  --panel-solid: #ffffff;
++  --panel-2: rgba(245, 248, 253, 0.95);
++  --text: #111827;
++  --muted: #5d697d;
++  --border: rgba(15, 23, 42, 0.11);
