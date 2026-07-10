@@ -98,7 +98,7 @@ export function classifyUpstreamError(error: unknown): ClassifiedUpstreamError {
   if (upstreamStatus === 401 || /unauthorized|invalid (api )?key|incorrect (api )?key|invalid token|token is invalid/.test(normalized)) {
     return classified('authentication', 401, false, message, upstreamStatus);
   }
-  if (upstreamStatus === 402 || /payment required|insufficient credits?|not enough credits?|billing|quota exceeded/.test(normalized)) {
+  if (upstreamStatus === 402 || /payment required|insufficient credits?|not enough credits?|requires? more credits?|billing|quota exceeded/.test(normalized)) {
     return classified('billing', 402, false, message, upstreamStatus);
   }
   if (upstreamStatus === 403 || /forbidden|permission denied|insufficient scope|not allowed/.test(normalized)) {
