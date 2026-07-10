@@ -18,6 +18,9 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json .npmrc ./
+# npm executes the package postinstall hook during npm ci, so the hook must be
+# available before the rest of the source tree is copied.
+COPY scripts/ensure-runtime-dirs.mjs ./scripts/ensure-runtime-dirs.mjs
 
 # --include=dev explicitly overrides production-only npm settings that may be
 # present in the Railway environment. The public registry is also pinned by
