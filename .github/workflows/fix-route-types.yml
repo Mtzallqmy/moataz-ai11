@@ -1,0 +1,47 @@
+name: Fix route TypeScript diagnostics
+
+on:
+  push:
+    branches: [feat/production-provider-ux]
+    paths:
+      - '.github/workflows/fix-route-types.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/production-provider-ux
+      - name: Apply exact fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('server/src/routes.ts')
+          text = path.read_text()
+          old = """      const input = parseInput(providerTestSchema, req.body);\n      const result = await validateProvider(input);"""
+          new = """      const input = parseInput(providerTestSchema, req.body);\n      const result = await validateProvider({\n        type: input.type,\n        apiKey: input.apiKey,\n        model: input.model,\n        ...(typeof input.baseUrl === 'string' ? { baseUrl: input.baseUrl } : {})\n      });"""
+          if old not in text:
+              raise SystemExit('provider test target not found')
+          text = text.replace(old, new, 1)
+          old = "const meta = normalizeIntegrationMeta(input.type, input.meta);"
+          new = "const meta = normalizeIntegrationMeta(input.type, input.meta ?? {});"
+          if old not in text:
+              raise SystemExit('integration meta target not found')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+          git rm .github/workflows/fix-route-types.yml
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: normalize provider test and integration metadata types'
+          git push origin HEAD:feat/production-provider-ux
