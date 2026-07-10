@@ -1,0 +1,151 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 79c909a..31689cb 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -2,6 +2,19 @@
+ 
+ All notable changes are documented here. The project version is synchronized with `package.json`.
+ 
++## Unreleased — production provider and UX hardening
++
++- Separated provider persistence from paid upstream validation; providers are saved as `untested` and tested explicitly.
++- Added structured upstream error mapping for authentication, authorization, billing/credits, missing models, rate limits, timeouts, network failures, and provider outages.
++- Added persisted provider and integration validation status, error code, and validation timestamp through additive compatibility migrations.
++- Added provider update/test/delete behavior and safely detached deleted providers from conversations.
++- Added per-conversation provider, model, and chat/agent mode selection with clearer recovery from stale provider references.
++- Separated GitHub/Telegram token persistence from validation, normalized token formats, and added real identity checks.
++- Restricted tools and Telegram polling to verified integrations and added dynamic Telegram bot reload after validation, edits, or deletion.
++- Added Telegram allowed-chat-ID handling and safer polling startup/error isolation.
++- Reorganized the React interface into focused pages, improved mobile navigation and layout, added status badges, structured error messages, request IDs, and a terminal availability check.
++- Added regression coverage for upstream error classification, provider persistence without upstream billing, integration persistence, token normalization, and Telegram API error payloads.
++
+ ## [1.2.0] — 2026-07-10
+ 
+ ### Phase 0 — measurable baseline
+diff --git a/client/src/lib/api.ts b/client/src/lib/api.ts
+index f4a4d54..25a672e 100644
+--- a/client/src/lib/api.ts
++++ b/client/src/lib/api.ts
+@@ -2,13 +2,15 @@ export class ApiError extends Error {
+   readonly status: number;
+   readonly code: string;
+   readonly details?: unknown;
++  readonly requestId?: string;
+ 
+-  constructor(status: number, code: string, details?: unknown) {
++  constructor(status: number, code: string, details?: unknown, requestId?: string) {
+     super(code);
+     this.name = 'ApiError';
+     this.status = status;
+     this.code = code;
+     this.details = details;
++    this.requestId = requestId;
+   }
+ }
+ 
+@@ -16,15 +18,23 @@ export type ApiRequestOptions = RequestInit & { accessToken?: string };
+ 
+ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+   const { accessToken, headers, ...rest } = options;
+-  const response = await fetch(path, {
+-    ...rest,
+-    credentials: 'include',
+-    headers: {
+-      ...(rest.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+-      ...headers
+-    }
+-  });
++  let response: Response;
++  try {
++    response = await fetch(path, {
++      ...rest,
++      credentials: 'include',
++      headers: {
++        ...(rest.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
++        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
++        ...headers
++      }
++    });
++  } catch (error) {
++    throw new ApiError(0, 'network_error', {
++      providerMessage: error instanceof Error ? error.message : String(error),
++      retryable: true
++    });
++  }
+ 
+   let data: unknown = {};
+   const contentType = response.headers.get('content-type') ?? '';
+@@ -39,7 +49,8 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
+   if (!response.ok) {
+     const record = data !== null && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : {};
+     const code = typeof record.error === 'string' ? record.error : 'request_failed';
+-    throw new ApiError(response.status, code, record.details);
++    const requestId = typeof record.requestId === 'string' ? record.requestId : response.headers.get('x-request-id') ?? undefined;
++    throw new ApiError(response.status, code, record.details, requestId);
+   }
+   return data as T;
+ }
+diff --git a/client/src/lib/i18n.ts b/client/src/lib/i18n.ts
+index b64802f..b40c316 100644
+--- a/client/src/lib/i18n.ts
++++ b/client/src/lib/i18n.ts
+@@ -1,9 +1,9 @@
+ const dict = {
+   ar: {
+-    login: 'تسجيل الدخول', email: 'البريد', password: 'كلمة المرور', dashboard: 'لوحة التحكم', chat: 'الوكيل', providers: 'المزودات', integrations: 'التكاملات', terminal: 'الطرفية', settings: 'الإعدادات', send: 'إرسال', newChat: 'محادثة جديدة', addProvider: 'إضافة مزود', addIntegration: 'إضافة تكامل', model: 'النموذج', type: 'النوع', apiKey: 'مفتاح API', baseUrl: 'رابط API', name: 'الاسم', welcome: 'مرحباً بك في Moataz AI', hero: 'منصة وكيل ذكي تربط النماذج والملفات وGitHub وTelegram في واجهة واحدة.', save: 'حفظ', tools: 'الأدوات', light: 'نهاري', dark: 'ليلي', language: 'اللغة', message: 'اكتب مهمتك هنا...', theme: 'الثيم', logout: 'تسجيل الخروج', loading: 'جارٍ التحقق من الجلسة…'
++    login: 'تسجيل الدخول', email: 'البريد', password: 'كلمة المرور', dashboard: 'الرئيسية', chat: 'المحادثات', providers: 'المزوّدات', integrations: 'التكاملات', terminal: 'الطرفية', settings: 'الإعدادات', send: 'إرسال', newChat: 'محادثة جديدة', addProvider: 'حفظ المزوّد', addIntegration: 'حفظ التكامل', model: 'النموذج', type: 'النوع', apiKey: 'مفتاح API', baseUrl: 'رابط API', name: 'الاسم', welcome: 'مرحبًا بك في Moataz AI', hero: 'منصة موحدة للمحادثات والوكلاء ومزوّدي النماذج وGitHub وTelegram.', save: 'حفظ', tools: 'الأدوات', light: 'نهاري', dark: 'ليلي', language: 'اللغة', message: 'اكتب رسالتك أو مهمتك…', theme: 'المظهر', logout: 'تسجيل الخروج', loading: 'جارٍ التحميل…', testConnection: 'اختبار الاتصال', testing: 'جارٍ الاختبار…', saving: 'جارٍ الحفظ…', verified: 'تم التحقق', failed: 'فشل التحقق', untested: 'لم يُختبر', edit: 'تعديل', delete: 'حذف', cancel: 'إلغاء', refresh: 'تحديث', status: 'الحالة', providerRequired: 'أضف مزودًا أو اختر مزودًا للمحادثة.', noProviders: 'لا توجد مزودات بعد.', noIntegrations: 'لا توجد تكاملات بعد.', noChats: 'ابدأ محادثة جديدة.', chatMode: 'وضع المحادثة', agentMode: 'وكيل بالأدوات', simpleChat: 'محادثة عادية', selectProvider: 'اختر مزودًا', selectModel: 'النموذج المستخدم', connectionSuccessful: 'الاتصال ناجح', token: 'التوكن', allowedChatIds: 'معرّفات محادثات Telegram المسموحة', allowedChatIdsHint: 'افصل بين المعرّفات بفواصل. يلزم معرف واحد على الأقل لتشغيل polling.', integrationIdentity: 'هوية التكامل', systemHealth: 'حالة النظام', database: 'قاعدة البيانات', uptime: 'مدة التشغيل', configuredProviders: 'المزوّدات المضافة', telegramBots: 'بوتات Telegram', available: 'متاح', unavailable: 'غير متاح', terminalDisabled: 'الطرفية معطلة في الإنتاج دون Sandbox خارجي.', menu: 'القائمة', close: 'إغلاق', retry: 'إعادة المحاولة', clear: 'مسح', conversationSettings: 'إعدادات المحادثة', providerSaved: 'تم حفظ المزوّد. اختبر الاتصال قبل استخدامه.', integrationSaved: 'تم حفظ التكامل. اختبر الاتصال قبل استخدامه.', copied: 'تم النسخ', overview: 'نظرة عامة', security: 'الأمان', appearance: 'المظهر واللغة'
+   },
+   en: {
+-    login: 'Login', email: 'Email', password: 'Password', dashboard: 'Dashboard', chat: 'Agent', providers: 'Providers', integrations: 'Integrations', terminal: 'Terminal', settings: 'Settings', send: 'Send', newChat: 'New chat', addProvider: 'Add provider', addIntegration: 'Add integration', model: 'Model', type: 'Type', apiKey: 'API key', baseUrl: 'API URL', name: 'Name', welcome: 'Welcome to Moataz AI', hero: 'An AI agent platform connecting models, files, GitHub and Telegram in one interface.', save: 'Save', tools: 'Tools', light: 'Light', dark: 'Dark', language: 'Language', message: 'Write your task here...', theme: 'Theme', logout: 'Logout', loading: 'Checking your session…'
++    login: 'Login', email: 'Email', password: 'Password', dashboard: 'Home', chat: 'Chats', providers: 'Providers', integrations: 'Integrations', terminal: 'Terminal', settings: 'Settings', send: 'Send', newChat: 'New chat', addProvider: 'Save provider', addIntegration: 'Save integration', model: 'Model', type: 'Type', apiKey: 'API key', baseUrl: 'API URL', name: 'Name', welcome: 'Welcome to Moataz AI', hero: 'A unified platform for chats, agents, model providers, GitHub and Telegram.', save: 'Save', tools: 'Tools', light: 'Light', dark: 'Dark', language: 'Language', message: 'Write a message or task…', theme: 'Appearance', logout: 'Logout', loading: 'Loading…', testConnection: 'Test connection', testing: 'Testing…', saving: 'Saving…', verified: 'Verified', failed: 'Failed', untested: 'Untested', edit: 'Edit', delete: 'Delete', cancel: 'Cancel', refresh: 'Refresh', status: 'Status', providerRequired: 'Add or select a provider for this conversation.', noProviders: 'No providers yet.', noIntegrations: 'No integrations yet.', noChats: 'Start a new conversation.', chatMode: 'Conversation mode', agentMode: 'Agent with tools', simpleChat: 'Simple chat', selectProvider: 'Select provider', selectModel: 'Model', connectionSuccessful: 'Connection successful', token: 'Token', allowedChatIds: 'Allowed Telegram chat IDs', allowedChatIdsHint: 'Separate IDs with commas. At least one ID is required for polling.', integrationIdentity: 'Integration identity', systemHealth: 'System health', database: 'Database', uptime: 'Uptime', configuredProviders: 'Configured providers', telegramBots: 'Telegram bots', available: 'Available', unavailable: 'Unavailable', terminalDisabled: 'The terminal is disabled in production without an external sandbox.', menu: 'Menu', close: 'Close', retry: 'Retry', clear: 'Clear', conversationSettings: 'Conversation settings', providerSaved: 'Provider saved. Test it before using it.', integrationSaved: 'Integration saved. Test it before using it.', copied: 'Copied', overview: 'Overview', security: 'Security', appearance: 'Appearance and language'
+   }
+ } as const;
+ 
+diff --git a/client/src/main.tsx b/client/src/main.tsx
+index f899011..1837557 100644
+--- a/client/src/main.tsx
++++ b/client/src/main.tsx
+@@ -1,39 +1,39 @@
+-import React, { useEffect, useRef, useState } from 'react';
++import React, { useEffect, useState } from 'react';
+ import { createRoot } from 'react-dom/client';
+ import { AuthProvider, useAuth } from './auth/AuthContext';
+ import { useT, type Language, type TranslationKey } from './lib/i18n';
+-import { reconcileMessageResponse, type ChatMessage, type ToolCall } from './chat/message-state';
++import { formatError } from './lib/errors';
++import { HomePage } from './pages/HomePage';
++import { ProvidersPage } from './pages/ProvidersPage';
++import { IntegrationsPage } from './pages/IntegrationsPage';
++import { ChatPage } from './pages/ChatPage';
++import { TerminalPage } from './pages/TerminalPage';
++import { SettingsPage } from './pages/SettingsPage';
+ import './styles/app.css';
+ 
+ type T = (key: TranslationKey) => string;
+-type ProviderSummary = { id: string; name: string; type: string; default_model: string; base_url?: string | null };
+-type IntegrationSummary = { id: string; name: string; type: string };
+-type ChatSummary = { id: string; title: string };
+-
+-function errorText(error: unknown): string {
+-  return error instanceof Error ? error.message : String(error);
+-}
++type Page = 'home' | 'chat' | 'providers' | 'integrations' | 'terminal' | 'settings';
+ 
+ function App() {
+   const { status, logout } = useAuth();
+-  const [lang, setLang] = useState<Language>((localStorage.getItem('moataz_lang') as Language | null) ?? 'ar');
++  const [language, setLanguage] = useState<Language>((localStorage.getItem('moataz_lang') as Language | null) ?? 'ar');
+   const [theme, setTheme] = useState(localStorage.getItem('moataz_theme') ?? 'dark');
+-  const t = useT(lang);
++  const t = useT(language);
+ 
+   useEffect(() => {
+-    document.documentElement.setAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+-    document.documentElement.setAttribute('lang', lang);
+-    document.body.setAttribute('data-theme', theme);
+-    localStorage.setItem('moataz_lang', lang);
++    document.documentElement.setAttribute('dir', language === 'ar' ? 'rtl' : 'ltr');
++    document.documentElement.setAttribute('lang', language);
++    document.documentElement.setAttribute('data-theme', theme);
++    localStorage.setItem('moataz_lang', language);
