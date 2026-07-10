@@ -23,6 +23,14 @@ export type UpstreamErrorDetails = {
   retryable: boolean;
 };
 
+type ClassifiedUpstreamError = {
+  stage: UpstreamStage;
+  status: number;
+  upstreamStatus?: number;
+  retryable: boolean;
+  message: string;
+};
+
 type UnknownRecord = Record<string, unknown>;
 
 function record(value: unknown): UnknownRecord | undefined {
@@ -63,45 +71,55 @@ function upstreamMessage(error: unknown): string {
   return 'Upstream service request failed.';
 }
 
-export function classifyUpstreamError(error: unknown): {
-  stage: UpstreamStage;
-  status: number;
-  upstreamStatus?: number;
-  retryable: boolean;
-  message: string;
-} {
+function classified(
+  stage: UpstreamStage,
+  status: number,
+  retryable: boolean,
+  message: string,
+  upstreamStatus: number | undefined
+): ClassifiedUpstreamError {
+  return {
+    stage,
+    status,
+    retryable,
+    message,
+    ...(upstreamStatus !== undefined ? { upstreamStatus } : {})
+  };
+}
+
+export function classifyUpstreamError(error: unknown): ClassifiedUpstreamError {
   const upstreamStatus = numericStatus(error);
   const message = upstreamMessage(error);
   const normalized = message.toLowerCase();
 
   if (/abort|timeout|timed out|deadline exceeded/.test(normalized)) {
-    return { stage: 'timeout', status: 504, upstreamStatus, retryable: true, message };
+    return classified('timeout', 504, true, message, upstreamStatus);
   }
   if (upstreamStatus === 401 || /unauthorized|invalid (api )?key|incorrect (api )?key|invalid token|token is invalid/.test(normalized)) {
-    return { stage: 'authentication', status: 401, upstreamStatus, retryable: false, message };
+    return classified('authentication', 401, false, message, upstreamStatus);
   }
   if (upstreamStatus === 402 || /payment required|insufficient credits?|not enough credits?|billing|quota exceeded/.test(normalized)) {
-    return { stage: 'billing', status: 402, upstreamStatus, retryable: false, message };
+    return classified('billing', 402, false, message, upstreamStatus);
   }
   if (upstreamStatus === 403 || /forbidden|permission denied|insufficient scope|not allowed/.test(normalized)) {
-    return { stage: 'authorization', status: 403, upstreamStatus, retryable: false, message };
+    return classified('authorization', 403, false, message, upstreamStatus);
   }
   if (upstreamStatus === 404 || /model.*not found|unknown model|no such model|does not exist/.test(normalized)) {
-    return { stage: 'model_not_found', status: 422, upstreamStatus, retryable: false, message };
+    return classified('model_not_found', 422, false, message, upstreamStatus);
   }
   if (upstreamStatus === 429 || /rate limit|too many requests|requests per minute|tokens per minute/.test(normalized)) {
-    return { stage: 'rate_limit', status: 429, upstreamStatus, retryable: true, message };
+    return classified('rate_limit', 429, true, message, upstreamStatus);
   }
   if (upstreamStatus === 400 || /invalid request|bad request|validation failed|malformed/.test(normalized)) {
-    return { stage: 'invalid_request', status: 422, upstreamStatus, retryable: false, message };
+    return classified('invalid_request', 422, false, message, upstreamStatus);
   }
   if (upstreamStatus !== undefined && upstreamStatus >= 500) {
-    return { stage: 'service_unavailable', status: 502, upstreamStatus, retryable: true, message };
+    return classified('service_unavailable', 502, true, message, upstreamStatus);
   }
   if (/econn|enotfound|network|fetch failed|socket|dns|certificate|tls/.test(normalized)) {
-    return { stage: 'network', status: 503, upstreamStatus, retryable: true, message };
+    return classified('network', 503, true, message, upstreamStatus);
   }
-  return { stage: 'unknown', status: 502, upstreamStatus, retryable: false, message };
+  return classified('unknown', 502, false, message, upstreamStatus);
 }
 
 export function upstreamAppError(
@@ -110,19 +128,19 @@ export function upstreamAppError(
   error: unknown
 ): AppError {
   if (error instanceof AppError) return error;
-  const classified = classifyUpstreamError(error);
+  const mapped = classifyUpstreamError(error);
   const details: UpstreamErrorDetails = {
     domain,
     service,
-    stage: classified.stage,
-    ...(classified.upstreamStatus !== undefined ? { upstreamStatus: classified.upstreamStatus } : {}),
-    providerMessage: classified.message,
-    retryable: classified.retryable
+    stage: mapped.stage,
+    ...(mapped.upstreamStatus !== undefined ? { upstreamStatus: mapped.upstreamStatus } : {}),
+    providerMessage: mapped.message,
+    retryable: mapped.retryable
   };
   return new AppError(
-    `${domain}_${classified.stage}`,
-    classified.status,
-    classified.message,
+    `${domain}_${mapped.stage}`,
+    mapped.status,
+    mapped.message,
     details
   );
 }
