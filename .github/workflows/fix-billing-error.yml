@@ -1,0 +1,41 @@
+name: Fix provider billing error classification
+
+on:
+  push:
+    branches: [feat/production-provider-ux]
+    paths:
+      - '.github/workflows/fix-billing-error.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/production-provider-ux
+      - name: Apply exact fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('server/src/upstream-errors.ts')
+          text = path.read_text()
+          old = r"payment required|insufficient credits?|not enough credits?|billing|quota exceeded"
+          new = r"payment required|insufficient credits?|not enough credits?|requires? more credits?|billing|quota exceeded"
+          if old not in text:
+              raise SystemExit('billing classifier target not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          git rm .github/workflows/fix-billing-error.yml
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: classify provider credit requirements as billing errors'
+          git push origin HEAD:feat/production-provider-ux
