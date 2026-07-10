@@ -23,7 +23,17 @@ jobs:
         run: |
           set -euo pipefail
           cat .bootstrap/production-ux.chunk-* > /tmp/production-ux.patch
-          git apply --check --exclude=server/src/index.ts /tmp/production-ux.patch
+          if ! git apply --check --exclude=server/src/index.ts /tmp/production-ux.patch 2> /tmp/apply-error.txt; then
+            cat /tmp/apply-error.txt
+            mkdir -p reports
+            cp /tmp/apply-error.txt reports/production-ux-apply-error.txt
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add reports/production-ux-apply-error.txt
+            git commit -m 'chore: record production UX patch diagnostics'
+            git push origin HEAD:${{ github.head_ref }}
+            exit 1
+          fi
           git apply --exclude=server/src/index.ts /tmp/production-ux.patch
           rm -rf .bootstrap
           git rm .github/workflows/apply-production-ux.yml
