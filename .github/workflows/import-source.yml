@@ -1,0 +1,41 @@
+name: Import project source
+
+on:
+  push:
+    paths:
+      - '.bootstrap/xz-006'
+
+permissions:
+  contents: write
+
+jobs:
+  import-source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out staging branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify and extract source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .bootstrap/xz-* | base64 --decode > /tmp/moataz-ai-source.tar.xz
+          echo "f6ef17b370a3a5bcfc456512ca0faeda79197ec8f9f6c2f487317c2222a732c3  /tmp/moataz-ai-source.tar.xz" | sha256sum --check --strict
+          mkdir -p /tmp/moataz-ai-source
+          tar -xJf /tmp/moataz-ai-source.tar.xz -C /tmp/moataz-ai-source
+
+      - name: Publish clean source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan imported-source
+          git rm -rf . || true
+          cp -a /tmp/moataz-ai-source/. .
+          git add -A
+          git commit -m "feat: import production-ready Moataz AI phase 0-1"
+          git branch -M main
+          git push --force origin main
