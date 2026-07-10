@@ -1,2 +1,3 @@
 Import the verified Moataz AI source archive.
 Retry after validating every archive segment.
+Retry with deterministic Base64 sanitization and integrity checks.
