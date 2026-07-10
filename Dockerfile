@@ -22,11 +22,10 @@ COPY package.json package-lock.json .npmrc ./
 # available before the rest of the source tree is copied.
 COPY scripts/ensure-runtime-dirs.mjs ./scripts/ensure-runtime-dirs.mjs
 
-# --include=dev explicitly overrides production-only npm settings that may be
-# present in the Railway environment. The public registry is also pinned by
-# .npmrc so the build never depends on an internal package mirror.
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --include=dev --no-audit --no-fund
+# Keep this command compatible with Railway's Dockerfile parser. A BuildKit
+# cache mount was removed because Railway requires an explicit cache id and
+# rejected the Dockerfile before the build started.
+RUN npm ci --include=dev --no-audit --no-fund
 
 COPY . .
 
