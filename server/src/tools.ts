@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { config } from './config.js';
 import { AppError } from './errors.js';
 import { redactSecrets } from './redaction.js';
+import { upstreamAppError } from './upstream-errors.js';
 
 export type IntegrationCredential = {
   type: string;
@@ -305,8 +306,12 @@ const definitions: ToolDefinition[] = [
       const input = githubRepoSchema.parse(args);
       const integration = requiredIntegration(context, 'github');
       const [owner, repo] = input.repo.split('/') as [string, string];
-      const response = await new Octokit({ auth: integration.token }).repos.get({ owner, repo });
-      return { name: response.data.full_name, description: response.data.description, defaultBranch: response.data.default_branch, stars: response.data.stargazers_count };
+      try {
+        const response = await new Octokit({ auth: integration.token }).repos.get({ owner, repo });
+        return { name: response.data.full_name, description: response.data.description, defaultBranch: response.data.default_branch, stars: response.data.stargazers_count };
+      } catch (error) {
+        throw upstreamAppError('integration', 'github', error);
+      }
     }
   },
   {
@@ -315,8 +320,12 @@ const definitions: ToolDefinition[] = [
       const input = githubIssueSchema.parse(args);
       const integration = requiredIntegration(context, 'github');
       const [owner, repo] = input.repo.split('/') as [string, string];
-      const response = await new Octokit({ auth: integration.token }).issues.create({ owner, repo, title: input.title, body: input.body });
-      return { url: response.data.html_url, number: response.data.number };
+      try {
+        const response = await new Octokit({ auth: integration.token }).issues.create({ owner, repo, title: input.title, body: input.body });
+        return { url: response.data.html_url, number: response.data.number };
+      } catch (error) {
+        throw upstreamAppError('integration', 'github', error);
+      }
     }
   },
   {
@@ -328,8 +337,12 @@ const definitions: ToolDefinition[] = [
       const chatId = input.chatId ?? (typeof configuredChatId === 'string' || typeof configuredChatId === 'number' ? configuredChatId : undefined);
       if (chatId === undefined) throw new AppError('telegram_chat_id_required', 400);
       const bot = new TelegramBot(integration.token, { polling: false });
-      const sent = await bot.sendMessage(chatId, input.text);
-      return { sent: true, messageId: sent.message_id, chatId: sent.chat.id };
+      try {
+        const sent = await bot.sendMessage(chatId, input.text);
+        return { sent: true, messageId: sent.message_id, chatId: sent.chat.id };
+      } catch (error) {
+        throw upstreamAppError('integration', 'telegram', error);
+      }
     }
   }
 ];

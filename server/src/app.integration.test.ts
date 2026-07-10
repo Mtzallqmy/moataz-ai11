@@ -79,13 +79,48 @@ describe('phase 1 HTTP integration', () => {
     expect(await consumeTerminalTicket(expired.ticket)).toBeUndefined();
   });
 
+
+  it('saves provider configuration without forcing a paid upstream request', async () => {
+    const response = await request(app)
+      .post('/api/providers')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Unverified OpenRouter',
+        type: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        apiKey: 'not-a-real-key-but-saveable',
+        defaultModel: 'openai/gpt-5'
+      })
+      .expect(201);
+    expect(response.body.provider.validation_status).toBe('untested');
+    const listed = await request(app).get('/api/providers').set('Authorization', `Bearer ${adminToken}`).expect(200);
+    expect(listed.body.providers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: response.body.provider.id, validation_status: 'untested' })
+    ]));
+  });
+
+  it('saves integrations without an upstream call and marks them untested', async () => {
+    const response = await request(app)
+      .post('/api/integrations')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        name: 'Telegram staging bot',
+        type: 'telegram',
+        token: '123456789:abcdefghijklmnopqrstuvwxyz_ABC123',
+        meta: { allowedChatIds: ['123456789'] }
+      })
+      .expect(201);
+    expect(response.body.integration.validation_status).toBe('untested');
+    expect(response.body.integration.meta.allowedChatIds).toEqual(['123456789']);
+  });
+
   it('prevents cross-user provider and chat access', async () => {
     const otherUserId = cryptoId();
     const hash = await bcrypt.hash('OtherUserPassword123!', 4);
     await run('INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, ?)', [otherUserId, 'other@example.com', hash, 'Other', 'user', 1]);
     const providerId = cryptoId();
     await run('INSERT INTO providers (id, user_id, name, type, api_key_enc, default_model) VALUES (?, ?, ?, ?, ?, ?)', [providerId, otherUserId, 'Other provider', 'openai', encrypt('test-key'), 'test-model']);
-    const invalidProvider = await request(app).post('/api/chats').set('Authorization', `Bearer ${adminToken}`).send({ providerId, mode: 'chat' }).expect(400);
+    const invalidProvider = await request(app).post('/api/chats').set('Authorization', `Bearer ${adminToken}`).send({ providerId, mode: 'chat' }).expect(404);
     expect(invalidProvider.body.error).toBe('provider_not_found');
 
     const chatId = cryptoId();

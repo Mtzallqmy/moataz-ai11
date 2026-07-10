@@ -2,13 +2,15 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly details?: unknown;
+  readonly requestId?: string;
 
-  constructor(status: number, code: string, details?: unknown) {
+  constructor(status: number, code: string, details?: unknown, requestId?: string) {
     super(code);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.details = details;
+    this.requestId = requestId;
   }
 }
 
@@ -16,15 +18,23 @@ export type ApiRequestOptions = RequestInit & { accessToken?: string };
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const { accessToken, headers, ...rest } = options;
-  const response = await fetch(path, {
-    ...rest,
-    credentials: 'include',
-    headers: {
-      ...(rest.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-      ...headers
-    }
-  });
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      ...rest,
+      credentials: 'include',
+      headers: {
+        ...(rest.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        ...headers
+      }
+    });
+  } catch (error) {
+    throw new ApiError(0, 'network_error', {
+      providerMessage: error instanceof Error ? error.message : String(error),
+      retryable: true
+    });
+  }
 
   let data: unknown = {};
   const contentType = response.headers.get('content-type') ?? '';
@@ -39,7 +49,8 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   if (!response.ok) {
     const record = data !== null && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : {};
     const code = typeof record.error === 'string' ? record.error : 'request_failed';
-    throw new ApiError(response.status, code, record.details);
+    const requestId = typeof record.requestId === 'string' ? record.requestId : response.headers.get('x-request-id') ?? undefined;
+    throw new ApiError(response.status, code, record.details, requestId);
   }
   return data as T;
 }
