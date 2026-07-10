@@ -4,7 +4,7 @@ on:
   push:
     branches: [feat/production-provider-ux]
     paths:
-      - '.bootstrap/production-ux.part-02'
+      - '.bootstrap/production-ux.chunk-14'
 
 permissions:
   contents: write
@@ -24,7 +24,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .bootstrap/production-ux.part-* > /tmp/production-ux.patch
+          cat .bootstrap/production-ux.chunk-* > /tmp/production-ux.patch
           git apply --check /tmp/production-ux.patch
           git apply /tmp/production-ux.patch
           rm -rf .bootstrap
