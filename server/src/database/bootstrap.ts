@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { config } from '../config.js';
 import { logger } from '../logger.js';
-import { cryptoId } from '../db.js';
+import { cryptoId } from './ids.js';
 import { usersRepository } from '../repositories/users.repository.js';
 
 export async function ensureDefaultAdmin(): Promise<void> {
