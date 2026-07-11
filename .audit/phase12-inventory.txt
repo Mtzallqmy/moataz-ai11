@@ -53,6 +53,7 @@
 ./server/src/config.test.ts
 ./server/src/config.ts
 ./server/src/crypto.ts
+./server/src/database/schema.ts
 ./server/src/db-cli.ts
 ./server/src/db.ts
 ./server/src/errors.ts
@@ -433,6 +434,8 @@ client/src/pages/TerminalPage.tsx:9:type TerminalEvent = { type: 'session_starte
 ./server/src/db.ts:279:  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.3.0', 'phase1-1.3.0']);
 ./server/src/db.ts:280:  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.5.0', 'phase1-1.5.0']);
 ./server/src/db.ts:313:  const rows = await query<{ version: string }>('SELECT version FROM schema_migrations ORDER BY applied_at ASC');
+./server/src/database/schema.ts:1:import { sql } from 'drizzle-orm';
+./server/src/database/schema.ts:15:} from 'drizzle-orm/pg-core';
 ./server/src/config.ts:72:  DATABASE_URL: optionalTrimmedString,
 ./server/src/config.ts:73:  DATABASE_SSL_MODE: z.enum(['disable', 'require', 'verify-full']).default('disable'),
 ./server/src/config.ts:74:  DATABASE_POOL_MAX: positiveInt(10),
