@@ -74,7 +74,7 @@ export async function connectWithRetry(): Promise<void> {
 
 export async function pingDatabase(): Promise<boolean> {
   try {
-    await pool.query({ text: 'SELECT 1', query_timeout: Math.min(config.databaseStatementTimeoutMs, 5_000) });
+    await pool.query('SELECT 1');
     return true;
   } catch {
     return false;
