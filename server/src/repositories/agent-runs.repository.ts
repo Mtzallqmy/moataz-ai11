@@ -2,13 +2,6 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { database } from '../database/client.js';
 import { agentRuns, agentSteps, attachments, messages, toolExecutions } from '../database/schema.js';
 
-async function nextSequence(tx: Parameters<Parameters<typeof database.transaction>[0]>[0], chatId: string): Promise<number> {
-  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${chatId}))`);
-  const [row] = await tx.select({ next: sql<number>`COALESCE(MAX(${messages.sequence}), 0)::bigint + 1` })
-    .from(messages).where(eq(messages.chatId, chatId));
-  return Number(row?.next ?? 1);
-}
-
 export const agentRunsRepository = {
   async findRunning(chatId: string): Promise<{ id: string } | undefined> {
     const [row] = await database.select({ id: agentRuns.id }).from(agentRuns)
@@ -27,7 +20,10 @@ export const agentRunsRepository = {
     attachmentIds: readonly string[];
   }): Promise<number> {
     return database.transaction(async (tx) => {
-      const sequence = await nextSequence(tx, input.chatId);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.chatId}))`);
+      const [sequenceRow] = await tx.select({ next: sql<number>`COALESCE(MAX(${messages.sequence}), 0)::bigint + 1` })
+        .from(messages).where(eq(messages.chatId, input.chatId));
+      const sequence = Number(sequenceRow?.next ?? 1);
       await tx.insert(messages).values({
         id: input.userMessage.id,
         chatId: input.chatId,
@@ -73,12 +69,15 @@ export const agentRunsRepository = {
       idempotencyKey: string;
     };
     summary: Record<string, unknown>;
-    inputTokens?: number;
-    outputTokens?: number;
-    totalTokens?: number;
+    inputTokens?: number | undefined;
+    outputTokens?: number | undefined;
+    totalTokens?: number | undefined;
   }): Promise<number> {
     return database.transaction(async (tx) => {
-      const sequence = await nextSequence(tx, input.assistantMessage.chatId);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${input.assistantMessage.chatId}))`);
+      const [sequenceRow] = await tx.select({ next: sql<number>`COALESCE(MAX(${messages.sequence}), 0)::bigint + 1` })
+        .from(messages).where(eq(messages.chatId, input.assistantMessage.chatId));
+      const sequence = Number(sequenceRow?.next ?? 1);
       await tx.insert(messages).values({
         id: input.assistantMessage.id,
         chatId: input.assistantMessage.chatId,
@@ -96,20 +95,20 @@ export const agentRunsRepository = {
         legacyCompletedAt: sql`CURRENT_TIMESTAMP`,
         summary: input.summary,
         legacyLog: JSON.stringify(input.summary),
-        inputTokens: input.inputTokens,
-        outputTokens: input.outputTokens,
-        totalTokens: input.totalTokens,
+        ...(input.inputTokens !== undefined ? { inputTokens: input.inputTokens } : {}),
+        ...(input.outputTokens !== undefined ? { outputTokens: input.outputTokens } : {}),
+        ...(input.totalTokens !== undefined ? { totalTokens: input.totalTokens } : {}),
         updatedAt: sql`CURRENT_TIMESTAMP`
       }).where(and(eq(agentRuns.id, input.runId), eq(agentRuns.userId, input.userId)));
       return sequence;
     });
   },
 
-  async fail(input: { runId: string; userId: string; errorCode: string; errorMessage?: string }): Promise<void> {
+  async fail(input: { runId: string; userId: string; errorCode: string; errorMessage?: string | undefined }): Promise<void> {
     await database.update(agentRuns).set({
       status: 'failed',
       errorCode: input.errorCode,
-      errorMessage: input.errorMessage?.slice(0, 1200),
+      ...(input.errorMessage ? { errorMessage: input.errorMessage.slice(0, 1200) } : {}),
       finishedAt: sql`CURRENT_TIMESTAMP`,
       legacyCompletedAt: sql`CURRENT_TIMESTAMP`,
       updatedAt: sql`CURRENT_TIMESTAMP`
@@ -122,7 +121,7 @@ export const agentRunsRepository = {
     stepNumber: number;
     type: string;
     status: string;
-    inputMetadata?: Record<string, unknown>;
+    inputMetadata?: Record<string, unknown> | undefined;
   }): Promise<void> {
     await database.insert(agentSteps).values({
       id: input.id,
@@ -137,25 +136,25 @@ export const agentRunsRepository = {
   async finishStep(input: {
     id: string;
     status: string;
-    outputMetadata?: Record<string, unknown>;
-    durationMs?: number;
-    errorCode?: string;
-    errorMessage?: string;
+    outputMetadata?: Record<string, unknown> | undefined;
+    durationMs?: number | undefined;
+    errorCode?: string | undefined;
+    errorMessage?: string | undefined;
   }): Promise<void> {
     await database.update(agentSteps).set({
       status: input.status,
       outputMetadata: input.outputMetadata ?? {},
       finishedAt: sql`CURRENT_TIMESTAMP`,
-      durationMs: input.durationMs,
-      errorCode: input.errorCode,
-      errorMessage: input.errorMessage?.slice(0, 1200)
+      ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+      ...(input.errorCode ? { errorCode: input.errorCode } : {}),
+      ...(input.errorMessage ? { errorMessage: input.errorMessage.slice(0, 1200) } : {})
     }).where(eq(agentSteps.id, input.id));
   },
 
   async createToolExecution(input: {
     id: string;
     agentRunId: string;
-    agentStepId?: string;
+    agentStepId?: string | undefined;
     toolName: string;
     status: string;
     arguments: Record<string, unknown>;
@@ -163,7 +162,7 @@ export const agentRunsRepository = {
     await database.insert(toolExecutions).values({
       id: input.id,
       agentRunId: input.agentRunId,
-      agentStepId: input.agentStepId,
+      ...(input.agentStepId ? { agentStepId: input.agentStepId } : {}),
       toolName: input.toolName,
       status: input.status,
       arguments: input.arguments
@@ -173,18 +172,18 @@ export const agentRunsRepository = {
   async finishToolExecution(input: {
     id: string;
     status: string;
-    resultMetadata?: Record<string, unknown>;
-    durationMs?: number;
-    errorCode?: string;
-    errorMessage?: string;
+    resultMetadata?: Record<string, unknown> | undefined;
+    durationMs?: number | undefined;
+    errorCode?: string | undefined;
+    errorMessage?: string | undefined;
   }): Promise<void> {
     await database.update(toolExecutions).set({
       status: input.status,
       resultMetadata: input.resultMetadata ?? {},
       finishedAt: sql`CURRENT_TIMESTAMP`,
-      durationMs: input.durationMs,
-      errorCode: input.errorCode,
-      errorMessage: input.errorMessage?.slice(0, 1200)
+      ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
+      ...(input.errorCode ? { errorCode: input.errorCode } : {}),
+      ...(input.errorMessage ? { errorMessage: input.errorMessage.slice(0, 1200) } : {})
     }).where(eq(toolExecutions.id, input.id));
   }
 };
