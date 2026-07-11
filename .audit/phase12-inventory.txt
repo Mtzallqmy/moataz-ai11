@@ -67,6 +67,7 @@
 ./server/src/provider-diagnostics.ts
 ./server/src/providers.test.ts
 ./server/src/providers.ts
+./server/src/providers/adapters/anthropic.adapter.ts
 ./server/src/providers/adapters/openai-compatible.adapter.ts
 ./server/src/providers/base-url.ts
 ./server/src/providers/diagnostics.ts
@@ -240,6 +241,11 @@ server/src/providers/adapters/openai-compatible.adapter.ts:292:  async *streamCh
 server/src/providers/adapters/openai-compatible.adapter.ts:304:        stream: true,
 server/src/providers/adapters/openai-compatible.adapter.ts:313:    if (!response.ok || !response.body) throw new AppError('provider_invalid_response', response.status || 502, `Provider stream returned HTTP ${response.status}.`);
 server/src/providers/adapters/openai-compatible.adapter.ts:321:        buffer += decoder.decode(value, { stream: true });
+server/src/providers/adapters/anthropic.adapter.ts:122:  async *streamChatCompletion(input: ProviderChatInput): AsyncIterable<ProviderStreamEvent> {
+server/src/providers/adapters/anthropic.adapter.ts:124:    const stream = clientFor(config).messages.stream({
+server/src/providers/adapters/anthropic.adapter.ts:138:    stream.on('text', (text) => text);
+server/src/providers/adapters/anthropic.adapter.ts:139:    for await (const event of stream) {
+server/src/providers/adapters/anthropic.adapter.ts:147:    const final = await stream.finalMessage();
 server/src/providers/http.ts:9:  readonly upstreamRequestId?: string;
 server/src/providers/http.ts:16:    upstreamRequestId?: string;
 server/src/providers/http.ts:24:    this.upstreamRequestId = options.upstreamRequestId;
