@@ -1,0 +1,56 @@
+typescript=5.5.4 exit=2 drizzle_errors=19 project_errors=25
+node_modules/drizzle-orm/mysql-core/query-builders/delete.d.ts(36,22): error TS2420: Class 'MySqlDeleteBase<TTable, TQueryResult, TPreparedQueryHKT, TDynamic, TExcludedMethods>' incorrectly implements interface 'SQLWrapper'.
+  Property 'getSQL' is missing in type 'MySqlDeleteBase<TTable, TQueryResult, TPreparedQueryHKT, TDynamic, TExcludedMethods>' but required in type 'SQLWrapper'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(199,244): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "where" | "orderBy" | "toSQL" | "$dynamic" | "having" | "groupBy" | "leftJoin" | "rightJoin" | "innerJoin" | ... 4 more ... | "exceptAll"'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(225,247): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(251,248): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(292,251): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(318,245): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(359,248): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(511,22): error TS2515: Non-abstract class 'MySqlSelectBase<TTableName, TSelection, TSelectMode, TPreparedQueryHKT, TNullabilityMap, TDynamic, TExcludedMethods, TResult, TSelectedFields>' does not implement inherited abstract member getSQL from class 'MySqlSelectQueryBuilderBase<MySqlSelectHKT, TTableName, TSelection, TSelectMode, TPreparedQueryHKT, TNullabilityMap, TDynamic, TExcludedMethods, TResult, TSelectedFields>'.
+
+typescript=5.6.3 exit=2 drizzle_errors=19 project_errors=25
+node_modules/drizzle-orm/mysql-core/query-builders/delete.d.ts(36,22): error TS2420: Class 'MySqlDeleteBase<TTable, TQueryResult, TPreparedQueryHKT, TDynamic, TExcludedMethods>' incorrectly implements interface 'SQLWrapper'.
+  Property 'getSQL' is missing in type 'MySqlDeleteBase<TTable, TQueryResult, TPreparedQueryHKT, TDynamic, TExcludedMethods>' but required in type 'SQLWrapper'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(199,244): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "where" | "orderBy" | "toSQL" | "$dynamic" | "having" | "groupBy" | "leftJoin" | "rightJoin" | "innerJoin" | ... 4 more ... | "exceptAll"'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(225,247): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "where" | "orderBy" | "toSQL" | "$dynamic" | "having" | "groupBy" | "leftJoin" | "rightJoin" | "innerJoin" | ... 4 more ... | "exceptAll"'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(251,248): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+
+typescript=5.7.2 exit=2 drizzle_errors=19 project_errors=25
+node_modules/drizzle-orm/mysql-core/query-builders/delete.d.ts(36,22): error TS2420: Class 'MySqlDeleteBase<TTable, TQueryResult, TPreparedQueryHKT, TDynamic, TExcludedMethods>' incorrectly implements interface 'SQLWrapper'.
+  Property 'getSQL' is missing in type 'MySqlDeleteBase<TTable, TQueryResult, TPreparedQueryHKT, TDynamic, TExcludedMethods>' but required in type 'SQLWrapper'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(199,244): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "where" | "orderBy" | "toSQL" | "$dynamic" | "having" | "groupBy" | "leftJoin" | "rightJoin" | "innerJoin" | ... 4 more ... | "exceptAll"'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(225,247): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "where" | "orderBy" | "toSQL" | "$dynamic" | "having" | "groupBy" | "leftJoin" | "rightJoin" | "innerJoin" | ... 4 more ... | "exceptAll"'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(251,248): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+
+typescript=5.8.3 exit=2 drizzle_errors=19 project_errors=25
+node_modules/drizzle-orm/mysql-core/query-builders/delete.d.ts(36,22): error TS2420: Class 'MySqlDeleteBase<TTable, TQueryResult, TPreparedQueryHKT, TDynamic, TExcludedMethods>' incorrectly implements interface 'SQLWrapper'.
+  Property 'getSQL' is missing in type 'MySqlDeleteBase<TTable, TQueryResult, TPreparedQueryHKT, TDynamic, TExcludedMethods>' but required in type 'SQLWrapper'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(199,244): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "where" | "orderBy" | "toSQL" | "$dynamic" | "having" | "groupBy" | "leftJoin" | "rightJoin" | "innerJoin" | ... 4 more ... | "exceptAll"'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(225,247): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "where" | "orderBy" | "toSQL" | "$dynamic" | "having" | "groupBy" | "leftJoin" | "rightJoin" | "innerJoin" | ... 4 more ... | "exceptAll"'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(251,248): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+
