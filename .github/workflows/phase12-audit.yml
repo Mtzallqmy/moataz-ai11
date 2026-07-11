@@ -8,31 +8,47 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  audit:
+  tree:
     if: github.head_ref == 'feat/provider-drizzle-phase12'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Runtime and scripts
-        run: |
+      - run: |
+          echo '=== RUNTIME ==='
           node --version
           npm --version
-          echo '=== package.json ==='
-          cat package.json
-      - name: Repository tree
-        run: |
           echo '=== FILE TREE ==='
           find . -path './.git' -prune -o -type f -print | sort
-      - name: Relevant source map
-        shell: bash
-        run: |
-          echo '=== TYPESCRIPT FILE LINE COUNTS ==='
-          find server client tests -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.sql' \) -print0 2>/dev/null | xargs -0 -r wc -l | sort -n
+          echo '=== TS LINE COUNTS ==='
+          find server client -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.sql' \) -print0 | xargs -0 -r wc -l | sort -n
+  database:
+    if: github.head_ref == 'feat/provider-drizzle-phase12'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
           echo '=== DATABASE REFERENCES ==='
-          grep -RInE "better-sqlite3|from 'pg'|from \"pg\"|SELECT |INSERT |UPDATE |DELETE |CREATE TABLE|BEGIN|COMMIT|ROLLBACK|query\(|run\(|get\(" server tests 2>/dev/null | head -2000 || true
+          grep -RInE "better-sqlite3|from 'pg'|from \"pg\"|SELECT |INSERT |UPDATE |DELETE |CREATE TABLE|BEGIN|COMMIT|ROLLBACK|query\(|run\(|get\(" server client 2>/dev/null | head -3000 || true
+  providers:
+    if: github.head_ref == 'feat/provider-drizzle-phase12'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
           echo '=== PROVIDER REFERENCES ==='
-          grep -RInE "provider|OpenAI|Anthropic|Gemini|models|chat/completions|responses|tool_calls|stream" server client tests 2>/dev/null | head -2000 || true
+          grep -RInE "provider|OpenAI|Anthropic|Gemini|models|chat/completions|responses|tool_calls|stream" server client 2>/dev/null | head -3000 || true
+  config:
+    if: github.head_ref == 'feat/provider-drizzle-phase12'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          echo '=== PACKAGE ==='
+          cat package.json
           echo '=== ENV REFERENCES ==='
-          grep -RInE "DATABASE_|ALLOW_LOCAL|SSRF|JWT_|ENCRYPTION_|process\.env|envSchema" server .env.example Dockerfile railway.json 2>/dev/null | head -1200 || true
+          grep -RInE "DATABASE_|ALLOW_LOCAL|SSRF|JWT_|ENCRYPTION_|process\.env|envSchema" server .env.example Dockerfile railway.json 2>/dev/null | head -2000 || true
