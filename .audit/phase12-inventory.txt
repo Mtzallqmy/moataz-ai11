@@ -68,6 +68,7 @@
 ./server/src/providers.test.ts
 ./server/src/providers.ts
 ./server/src/providers/base-url.ts
+./server/src/providers/diagnostics.ts
 ./server/src/providers/http.ts
 ./server/src/providers/registry.ts
 ./server/src/providers/types.ts
@@ -245,6 +246,15 @@ server/src/providers/registry.ts:19:    streaming: true,
 server/src/providers/registry.ts:55:    capabilities: { modelDiscovery: false, streaming: true, tools: true, vision: true, embeddings: false, responsesApi: false },
 server/src/providers/registry.ts:70:    capabilities: { modelDiscovery: true, streaming: true, tools: null, vision: true, embeddings: true, responsesApi: false },
 server/src/providers/registry.ts:94:    capabilities: { modelDiscovery: null, streaming: null, tools: null, vision: null, embeddings: null, responsesApi: null }
+server/src/providers/diagnostics.ts:42:  upstreamRequestId?: string;
+server/src/providers/diagnostics.ts:53:      ...(error.upstreamRequestId ? { upstreamRequestId: error.upstreamRequestId } : {}),
+server/src/providers/diagnostics.ts:60:      httpStatus: numberValue(root?.upstreamStatus, root?.httpStatus),
+server/src/providers/diagnostics.ts:64:      upstreamRequestId: stringValue(root?.upstreamRequestId, root?.providerRequestId),
+server/src/providers/diagnostics.ts:78:    upstreamRequestId: stringValue(root?.request_id, response?.request_id, body?.request_id),
+server/src/providers/diagnostics.ts:229:    ...(info.upstreamRequestId ? { upstreamRequestId: info.upstreamRequestId } : {}),
+server/src/providers/diagnostics.ts:246:  upstreamRequestId?: string;
+server/src/providers/diagnostics.ts:264:    ...(input.upstreamRequestId ? { upstreamRequestId: input.upstreamRequestId } : {}),
+server/src/providers/diagnostics.ts:281:    providerRequestId: diagnostic.upstreamRequestId
 server/src/providers.test.ts:2:import { assertProviderCredentials, normalizeBaseUrl, providerDefinition, resolveProviderBaseUrl } from './providers.js';
 server/src/providers.test.ts:6:    expect(resolveProviderBaseUrl('openai', undefined)).toBe('https://api.openai.com/v1');
 server/src/providers.test.ts:7:    expect(resolveProviderBaseUrl('nvidia', undefined)).toBe('https://integrate.api.nvidia.com/v1');
