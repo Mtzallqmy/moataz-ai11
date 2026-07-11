@@ -1,0 +1,90 @@
+name: Restore v1.5 routes
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    if: github.head_ref == 'fix/provider-session-attachments-v1.5'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - name: Restore known-good routes and add retry cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git checkout a489f64826140a6adc9d34eebe527abf5642431e -- server/src/routes.ts
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('server/src/routes.ts')
+          text = path.read_text()
+          start = text.index("  app.post('/api/chats/:id/messages'")
+          end = text.index("  app.post('/api/tools/run'", start)
+          segment = text[start:end]
+
+          old = """    let runId: string | undefined;
+              let locked = false;
+              try {
+                const input = parseInput(messageSchema, req.body);
+                const attachmentIds = input.attachmentIds ?? [];"""
+          new = """    let runId: string | undefined;
+              let userMessageId: string | undefined;
+              let locked = false;
+              try {
+                const input = parseInput(messageSchema, req.body);
+                const attachmentIds = input.attachmentIds ?? [];"""
+          if old not in segment:
+              raise SystemExit('message declaration block not found')
+          segment = segment.replace(old, new, 1)
+
+          old_user = '      const userMessageId = cryptoId();'
+          if old_user not in segment:
+              raise SystemExit('user message declaration not found')
+          segment = segment.replace(old_user, '      userMessageId = cryptoId();', 1)
+
+          catch_start = segment.rfind('    } catch (error) {')
+          finally_start = segment.find('    } finally {', catch_start)
+          if catch_start < 0 or finally_start < 0:
+              raise SystemExit('outer message catch/finally not found')
+          catch_block = """    } catch (error) {
+              if (userMessageId) {
+                await transaction([
+                  {
+                    sql: 'UPDATE attachments SET message_id = NULL WHERE message_id = ? AND chat_id = ? AND user_id = ?',
+                    params: [userMessageId, chatId, req.user!.id]
+                  },
+                  {
+                    sql: 'DELETE FROM messages WHERE id = ? AND chat_id = ? AND user_id = ? AND role = ?',
+                    params: [userMessageId, chatId, req.user!.id, 'user']
+                  }
+                ]).catch(() => undefined);
+              }
+              if (runId) {
+                await run('UPDATE agent_runs SET status = ?, error_code = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?', ['failed', errorCode(error), runId]).catch(() => undefined);
+              }
+              next(error);
+          """
+          segment = segment[:catch_start] + catch_block + segment[finally_start:]
+          path.write_text(text[:start] + segment + text[end:])
+          PY
+          rm -f .github/workflows/diagnose-v15-lint.yml
+          rm -f .github/workflows/restore-v15-routes.yml
+      - name: Commit restored routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: restore complete message route and retry cleanup'
+          git push origin HEAD:${{ github.head_ref }}
