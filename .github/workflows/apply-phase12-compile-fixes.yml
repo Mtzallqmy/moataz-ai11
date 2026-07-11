@@ -1,0 +1,31 @@
+name: Apply phase 1-2 compile fixes
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'feat/providers-drizzle-phase12'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - run: |
+          set -euo pipefail
+          python3 .bootstrap/phase12/fix_compile.py
+          rm -rf .bootstrap
+          rm -f .github/workflows/apply-phase12-compile-fixes.yml
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: resolve phase 1-2 lint and Telegram syntax errors'
+          git push origin HEAD:${{ github.head_ref }}
