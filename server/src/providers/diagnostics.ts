@@ -6,13 +6,22 @@ import type { ModelDiscoveryResult, ProviderDiagnosticResult, ProviderDiagnostic
 type UnknownRecord = Record<string, unknown>;
 
 type DiagnosticContext = {
-  endpoint?: string;
-  model?: string;
-  requestId?: string;
-  discovery?: ModelDiscoveryResult;
-  keyValidHint?: boolean | null;
-  providerReachableHint?: boolean | null;
-  latencyMs?: number;
+  endpoint?: string | undefined;
+  model?: string | undefined;
+  requestId?: string | undefined;
+  discovery?: ModelDiscoveryResult | undefined;
+  keyValidHint?: boolean | null | undefined;
+  providerReachableHint?: boolean | null | undefined;
+  latencyMs?: number | undefined;
+};
+
+type ErrorDetails = {
+  httpStatus?: number | undefined;
+  providerCode?: string | undefined;
+  message: string;
+  endpoint?: string | undefined;
+  upstreamRequestId?: string | undefined;
+  causeCode?: string | undefined;
 };
 
 function record(value: unknown): UnknownRecord | undefined {
@@ -34,20 +43,14 @@ function numberValue(...values: unknown[]): number | undefined {
   return undefined;
 }
 
-function details(error: unknown): {
-  httpStatus?: number;
-  providerCode?: string;
-  message: string;
-  endpoint?: string;
-  upstreamRequestId?: string;
-  causeCode?: string;
-} {
+function details(error: unknown): ErrorDetails {
   if (error instanceof ProviderHttpError) {
     const payload = record(error.payload);
     const nested = record(payload?.error);
+    const providerCode = stringValue(nested?.code, payload?.code, payload?.error_code);
     return {
       ...(error.status !== undefined ? { httpStatus: error.status } : {}),
-      ...(stringValue(nested?.code, payload?.code, payload?.error_code) ? { providerCode: stringValue(nested?.code, payload?.code, payload?.error_code)! } : {}),
+      ...(providerCode ? { providerCode } : {}),
       message: redactText(error.message).slice(0, 1200),
       ...(error.endpoint ? { endpoint: error.endpoint } : {}),
       ...(error.upstreamRequestId ? { upstreamRequestId: error.upstreamRequestId } : {}),
@@ -56,13 +59,18 @@ function details(error: unknown): {
   }
   if (error instanceof AppError) {
     const root = record(error.details);
+    const httpStatus = numberValue(root?.upstreamStatus, root?.httpStatus);
+    const providerCode = stringValue(root?.providerCode, root?.code);
+    const endpoint = stringValue(root?.testedEndpoint, root?.endpoint);
+    const upstreamRequestId = stringValue(root?.upstreamRequestId, root?.providerRequestId);
+    const causeCode = stringValue(root?.causeCode);
     return {
-      httpStatus: numberValue(root?.upstreamStatus, root?.httpStatus),
-      providerCode: stringValue(root?.providerCode, root?.code),
+      ...(httpStatus !== undefined ? { httpStatus } : {}),
+      ...(providerCode ? { providerCode } : {}),
       message: stringValue(root?.providerMessage, error.message) ?? error.code,
-      endpoint: stringValue(root?.testedEndpoint, root?.endpoint),
-      upstreamRequestId: stringValue(root?.upstreamRequestId, root?.providerRequestId),
-      causeCode: stringValue(root?.causeCode)
+      ...(endpoint ? { endpoint } : {}),
+      ...(upstreamRequestId ? { upstreamRequestId } : {}),
+      ...(causeCode ? { causeCode } : {})
     };
   }
   const root = record(error);
@@ -70,98 +78,43 @@ function details(error: unknown): {
   const body = record(response?.data) ?? record(response?.body) ?? record(root?.error);
   const nested = record(body?.error);
   const cause = record(root?.cause);
+  const httpStatus = numberValue(root?.status, root?.statusCode, response?.status, body?.status);
+  const providerCode = stringValue(nested?.code, body?.code, body?.error_code, root?.code);
+  const endpoint = stringValue(root?.endpoint, response?.url);
+  const upstreamRequestId = stringValue(root?.request_id, response?.request_id, body?.request_id);
+  const causeCode = stringValue(root?.code, cause?.code);
   return {
-    httpStatus: numberValue(root?.status, root?.statusCode, response?.status, body?.status),
-    providerCode: stringValue(nested?.code, body?.code, body?.error_code, root?.code),
+    ...(httpStatus !== undefined ? { httpStatus } : {}),
+    ...(providerCode ? { providerCode } : {}),
     message: stringValue(nested?.message, body?.message, body?.detail, root?.message, typeof error === 'string' ? error : undefined) ?? 'Provider request failed.',
-    endpoint: stringValue(root?.endpoint, response?.url),
-    upstreamRequestId: stringValue(root?.request_id, response?.request_id, body?.request_id),
-    causeCode: stringValue(root?.code, cause?.code)
+    ...(endpoint ? { endpoint } : {}),
+    ...(upstreamRequestId ? { upstreamRequestId } : {}),
+    ...(causeCode ? { causeCode } : {})
   };
 }
 
 function messages(status: ProviderDiagnosticStatus): { ar: string; en: string } {
   const values: Record<ProviderDiagnosticStatus, { ar: string; en: string }> = {
-    ready: {
-      ar: 'تم الوصول إلى المزوّد وتنفيذ طلب حقيقي بالنموذج المحدد بنجاح.',
-      en: 'The provider was reached and a real inference request succeeded with the selected model.'
-    },
-    invalid_api_key: {
-      ar: 'رفض المزوّد مفتاح API. تحقق من المفتاح ومن أنه لم يُلغَ أو ينتهِ.',
-      en: 'The provider rejected the API key. Check that it is correct, active, and not revoked.'
-    },
-    forbidden: {
-      ar: 'تم الوصول إلى المزوّد، لكن المفتاح لا يملك الصلاحية المطلوبة لهذا المورد أو النموذج.',
-      en: 'The provider was reached, but the key does not have permission for this resource or model.'
-    },
-    invalid_base_url: {
-      ar: 'عنوان Base URL غير صالح. أدخل عنوان HTTP أو HTTPS مطلقًا دون بيانات دخول.',
-      en: 'The Base URL is invalid. Enter an absolute HTTP or HTTPS URL without embedded credentials.'
-    },
-    endpoint_not_found: {
-      ar: 'تم الوصول إلى المضيف، لكن مسار API المطلوب غير موجود. تحقق من Base URL ومسار الإصدار.',
-      en: 'The host was reached, but the requested API endpoint was not found. Check the Base URL and version path.'
-    },
-    model_not_found: {
-      ar: 'تم الوصول إلى المزوّد، لكن اسم النموذج غير موجود أو غير متاح لهذا الحساب.',
-      en: 'The provider was reached, but the model ID does not exist or is not available to this account.'
-    },
-    model_unavailable: {
-      ar: 'تم الوصول إلى المزوّد، لكن لا توجد قناة متاحة حاليًا للنموذج المحدد. اختر نموذجًا آخر من قائمة النماذج المتاحة أو أعد المحاولة لاحقًا.',
-      en: 'The provider was reached, but no channel is currently available for the selected model. Choose another discovered model or retry later.'
-    },
-    provider_unavailable: {
-      ar: 'المزوّد غير متاح مؤقتًا أو أعاد خطأ خادم. أعد المحاولة لاحقًا.',
-      en: 'The provider is temporarily unavailable or returned a server error. Retry later.'
-    },
-    rate_limited: {
-      ar: 'تم بلوغ حد الطلبات أو التوكنات لدى المزوّد. انتظر ثم أعد المحاولة.',
-      en: 'The provider request or token limit was reached. Wait and retry.'
-    },
-    insufficient_quota: {
-      ar: 'نفدت الحصة المتاحة للحساب أو للمشروع. راجع حدود الاستخدام أو الحصة.',
-      en: 'The account or project quota is exhausted. Review usage limits or quota.'
-    },
-    billing_required: {
-      ar: 'المفتاح قد يكون صحيحًا، لكن المزوّد يطلب رصيدًا أو تفعيل الفوترة قبل تنفيذ الطلب.',
-      en: 'The key may be valid, but the provider requires credits or billing before this request can run.'
-    },
-    timeout: {
-      ar: 'انتهت مهلة الاتصال بالمزوّد. أعد المحاولة أو تحقق من حالة الخدمة.',
-      en: 'The provider request timed out. Retry or check the provider status.'
-    },
-    network_error: {
-      ar: 'تعذر إنشاء اتصال شبكي بالمزوّد. تحقق من العنوان والشبكة.',
-      en: 'A network connection to the provider could not be established. Check the URL and network.'
-    },
-    dns_error: {
-      ar: 'تعذر حل اسم مضيف المزوّد عبر DNS. تحقق من اسم النطاق.',
-      en: 'The provider hostname could not be resolved through DNS. Check the domain name.'
-    },
-    tls_error: {
-      ar: 'فشل اتصال TLS أو التحقق من شهادة المزوّد.',
-      en: 'TLS connection or certificate verification failed for the provider.'
-    },
-    unsupported_protocol: {
-      ar: 'البروتوكول غير مدعوم. استخدم HTTP أو HTTPS فقط.',
-      en: 'The URL protocol is unsupported. Use HTTP or HTTPS only.'
-    },
-    model_discovery_unsupported: {
-      ar: 'المزوّد لا يوفر اكتشاف النماذج عبر هذا المسار. أدخل Model ID يدويًا ثم نفذ فحصًا حقيقيًا.',
-      en: 'The provider does not expose model discovery at this endpoint. Enter a model ID manually and run an inference test.'
-    },
-    invalid_request: {
-      ar: 'وصل الطلب إلى المزوّد لكنه رفض صيغة الطلب أو أحد الحقول. لا يعني ذلك أن المفتاح غير صحيح.',
-      en: 'The request reached the provider, but its payload or a parameter was rejected. This does not mean the key is invalid.'
-    },
-    invalid_response: {
-      ar: 'أعاد المزوّد استجابة غير صالحة أو غير متوقعة.',
-      en: 'The provider returned an invalid or unexpected response.'
-    },
-    unknown_error: {
-      ar: 'أعاد المزوّد خطأ غير مصنف. راجع رقم الطلب ورسالة المزوّد المنقحة.',
-      en: 'The provider returned an unclassified error. Review the request ID and redacted provider message.'
-    }
+    ready: { ar: 'تم الوصول إلى المزوّد وتنفيذ طلب حقيقي بالنموذج المحدد بنجاح.', en: 'The provider was reached and a real inference request succeeded with the selected model.' },
+    invalid_api_key: { ar: 'رفض المزوّد مفتاح API. تحقق من المفتاح ومن أنه لم يُلغَ أو ينتهِ.', en: 'The provider rejected the API key. Check that it is correct, active, and not revoked.' },
+    forbidden: { ar: 'تم الوصول إلى المزوّد، لكن المفتاح لا يملك الصلاحية المطلوبة لهذا المورد أو النموذج.', en: 'The provider was reached, but the key does not have permission for this resource or model.' },
+    invalid_base_url: { ar: 'عنوان Base URL غير صالح. أدخل عنوان HTTP أو HTTPS مطلقًا دون بيانات دخول.', en: 'The Base URL is invalid. Enter an absolute HTTP or HTTPS URL without embedded credentials.' },
+    endpoint_not_found: { ar: 'تم الوصول إلى المضيف، لكن مسار API المطلوب غير موجود. تحقق من Base URL ومسار الإصدار.', en: 'The host was reached, but the requested API endpoint was not found. Check the Base URL and version path.' },
+    model_not_found: { ar: 'تم الوصول إلى المزوّد، لكن اسم النموذج غير موجود أو غير متاح لهذا الحساب.', en: 'The provider was reached, but the model ID does not exist or is not available to this account.' },
+    model_unavailable: { ar: 'تم الوصول إلى المزوّد، لكن لا توجد قناة متاحة حاليًا للنموذج المحدد. اختر نموذجًا آخر من قائمة النماذج المتاحة أو أعد المحاولة لاحقًا.', en: 'The provider was reached, but no channel is currently available for the selected model. Choose another discovered model or retry later.' },
+    provider_unavailable: { ar: 'المزوّد غير متاح مؤقتًا أو أعاد خطأ خادم. أعد المحاولة لاحقًا.', en: 'The provider is temporarily unavailable or returned a server error. Retry later.' },
+    rate_limited: { ar: 'تم بلوغ حد الطلبات أو التوكنات لدى المزوّد. انتظر ثم أعد المحاولة.', en: 'The provider request or token limit was reached. Wait and retry.' },
+    insufficient_quota: { ar: 'نفدت الحصة المتاحة للحساب أو للمشروع. راجع حدود الاستخدام أو الحصة.', en: 'The account or project quota is exhausted. Review usage limits or quota.' },
+    billing_required: { ar: 'المفتاح قد يكون صحيحًا، لكن المزوّد يطلب رصيدًا أو تفعيل الفوترة قبل تنفيذ الطلب.', en: 'The key may be valid, but the provider requires credits or billing before this request can run.' },
+    timeout: { ar: 'انتهت مهلة الاتصال بالمزوّد. أعد المحاولة أو تحقق من حالة الخدمة.', en: 'The provider request timed out. Retry or check the provider status.' },
+    network_error: { ar: 'تعذر إنشاء اتصال شبكي بالمزوّد. تحقق من العنوان والشبكة.', en: 'A network connection to the provider could not be established. Check the URL and network.' },
+    dns_error: { ar: 'تعذر حل اسم مضيف المزوّد عبر DNS. تحقق من اسم النطاق.', en: 'The provider hostname could not be resolved through DNS. Check the domain name.' },
+    tls_error: { ar: 'فشل اتصال TLS أو التحقق من شهادة المزوّد.', en: 'TLS connection or certificate verification failed for the provider.' },
+    unsupported_protocol: { ar: 'البروتوكول غير مدعوم. استخدم HTTP أو HTTPS فقط.', en: 'The URL protocol is unsupported. Use HTTP or HTTPS only.' },
+    model_discovery_unsupported: { ar: 'المزوّد لا يوفر اكتشاف النماذج عبر هذا المسار. أدخل Model ID يدويًا ثم نفذ فحصًا حقيقيًا.', en: 'The provider does not expose model discovery at this endpoint. Enter a model ID manually and run an inference test.' },
+    invalid_request: { ar: 'وصل الطلب إلى المزوّد لكنه رفض صيغة الطلب أو أحد الحقول. لا يعني ذلك أن المفتاح غير صحيح.', en: 'The request reached the provider, but its payload or a parameter was rejected. This does not mean the key is invalid.' },
+    invalid_response: { ar: 'أعاد المزوّد استجابة غير صالحة أو غير متوقعة.', en: 'The provider returned an invalid or unexpected response.' },
+    unknown_error: { ar: 'أعاد المزوّد خطأ غير مصنف. راجع رقم الطلب ورسالة المزوّد المنقحة.', en: 'The provider returned an unclassified error. Review the request ID and redacted provider message.' }
   };
   return values[status];
 }
@@ -174,12 +127,11 @@ function classify(error: unknown, context: DiagnosticContext): ProviderDiagnosti
   let keyValid: boolean | null = context.keyValidHint ?? null;
   let providerReachable: boolean | null = context.providerReachableHint ?? null;
   let modelAvailable: boolean | null = null;
-  let retryable = false;
 
   if (error instanceof AppError && error.code === 'provider_base_url_invalid') status = 'invalid_base_url';
   else if (error instanceof AppError && error.code === 'provider_unsupported_protocol') status = 'unsupported_protocol';
-  else if (/enotfound|eai_again|dns_resolution_failed|dns/.test(normalized)) status = 'dns_error';
-  else if (/certificate|cert_|unable_to_verify|self signed|tls|ssl/.test(normalized)) status = 'tls_error';
+  else if (/enotfound|eai_again|dns_resolution_failed|\bdns\b/.test(normalized)) status = 'dns_error';
+  else if (/certificate|cert_|unable_to_verify|self signed|\btls\b|\bssl\b/.test(normalized)) status = 'tls_error';
   else if (/abort|timeout|timed out|deadline exceeded|provider_timeout/.test(normalized) || http === 408 || http === 504) status = 'timeout';
   else if (http === 401 || /invalid[_ ]api[_ ]key|incorrect[_ ]api[_ ]key|authentication.*failed|unauthorized/.test(normalized)) status = 'invalid_api_key';
   else if (http === 403 || /forbidden|permission denied|insufficient scope|access denied/.test(normalized)) status = 'forbidden';
@@ -210,8 +162,7 @@ function classify(error: unknown, context: DiagnosticContext): ProviderDiagnosti
   }
 
   if (status === 'model_not_found' || status === 'model_unavailable') modelAvailable = false;
-  if (status === 'ready') modelAvailable = true;
-  retryable = ['model_unavailable', 'provider_unavailable', 'rate_limited', 'timeout', 'network_error', 'dns_error'].includes(status);
+  const retryable = ['model_unavailable', 'provider_unavailable', 'rate_limited', 'timeout', 'network_error', 'dns_error'].includes(status);
   const localized = messages(status);
   return {
     success: false,
@@ -239,12 +190,12 @@ export function diagnoseProviderError(error: unknown, context: DiagnosticContext
 }
 
 export function readyProviderDiagnostic(input: {
-  endpoint?: string;
+  endpoint?: string | undefined;
   model: string;
   latencyMs: number;
-  requestId?: string;
-  upstreamRequestId?: string;
-  discovery?: ModelDiscoveryResult;
+  requestId?: string | undefined;
+  upstreamRequestId?: string | undefined;
+  discovery?: ModelDiscoveryResult | undefined;
 }): ProviderDiagnosticResult {
   const localized = messages('ready');
   return {
@@ -273,11 +224,10 @@ export function providerDiagnosticError(diagnostic: ProviderDiagnosticResult): A
         : diagnostic.status === 'billing_required' ? 402
           : diagnostic.status === 'provider_unavailable' || diagnostic.status === 'model_unavailable' ? 503
             : diagnostic.status === 'timeout' ? 504
-              : diagnostic.status === 'endpoint_not_found' || diagnostic.status === 'model_not_found' ? 422
-                : 422;
+              : 422;
   return new AppError(`provider_${diagnostic.status}`, statusCode, diagnostic.message, {
     ...diagnostic,
     providerMessage: diagnostic.message,
-    providerRequestId: diagnostic.upstreamRequestId
+    ...(diagnostic.upstreamRequestId ? { providerRequestId: diagnostic.upstreamRequestId } : {})
   });
 }
