@@ -7,8 +7,7 @@ import {
   integrationsService,
   normalizeIntegrationMeta,
   publicIntegration,
-  validateIntegration,
-  type IntegrationType
+  validateIntegration
 } from '../services/integrations.service.js';
 import { parseInput, uuidSchema } from '../validation.js';
 

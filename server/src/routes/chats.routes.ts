@@ -15,7 +15,7 @@ import { config } from '../config.js';
 import { decrypt } from '../crypto.js';
 import { cryptoId } from '../database/ids.js';
 import { AppError, errorMessage } from '../errors.js';
-import { completeAgentStep, LLMError, type LLMToolSpec, type Msg, type Provider } from '../llm.js';
+import { completeAgentStep, LLMError, type Msg, type Provider } from '../llm.js';
 import { runMultiAgent } from '../multi-agent.js';
 import { redactSecrets, redactText } from '../redaction.js';
 import { agentRunsRepository } from '../repositories/agent-runs.repository.js';

@@ -308,8 +308,7 @@ async function sendStatus(bot: TelegramBot, row: IntegrationRow, chatId: number,
     `GitHub: ${integrationTypes.includes('github') ? 'جاهز' : 'غير مهيأ'}`,
     `Sandbox: ${integrationTypes.includes('sandbox') ? 'جاهز خارجيًا' : 'غير مهيأ'}`,
     'نوع الخطة المجانية أو المدفوعة لا يُخمن؛ نتيجة الفحص تعرض فقط ما أثبته رد المزوّد.'
-  ].join('
-');
+  ].join('\n');
   await sendChunks(bot, chatId, text, true);
 }
 
@@ -318,10 +317,8 @@ async function sendProviders(bot: TelegramBot, row: IntegrationRow, chatId: numb
   const ready = providers.filter((provider) => provider.is_ready && provider.status === 'ready' && provider.is_enabled);
   if (ready.length === 0) {
     const failures = providers.filter((provider) => provider.last_check_code)
-      .map((provider) => `• ${provider.name}: ${provider.last_check_code}`).join('
-');
-    await bot.sendMessage(chatId, `لا يوجد مزوّد اجتاز فحص inference حقيقي.${failures ? `
-${failures}` : ''}`, {
+      .map((provider) => `• ${provider.name}: ${provider.last_check_code}`).join('\n');
+    await bot.sendMessage(chatId, `لا يوجد مزوّد اجتاز فحص inference حقيقي.${failures ? `\n${failures}` : ''}`, {
       reply_markup: { inline_keyboard: [[{ text: 'فتح إعدادات المزوّدات', url: pageUrl('providers') }]] }
     });
     return;
@@ -360,8 +357,7 @@ async function diagnoseProvider(bot: TelegramBot, row: IntegrationRow, chatId: n
       `النموذج متاح: ${String(result.diagnostic.modelAvailable)}`,
       `الزمن: ${result.diagnostic.latencyMs ?? 0}ms`,
       result.diagnostic.userMessageAr
-    ].join('
-'), true);
+    ].join('\n'), true);
   } catch (error) {
     await sendChunks(bot, chatId, explicitProviderError(providerRow.type, error), true);
   }
