@@ -16,19 +16,36 @@ const booleanString = z
   .optional()
   .transform((value) => value === 'true');
 
-const positiveInt = (fallback: number) =>
-  z
-    .string()
-    .optional()
-    .transform((value, ctx) => {
-      if (value === undefined || value === '') return fallback;
-      const parsed = Number(value);
-      if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be a positive integer' });
-        return z.NEVER;
-      }
-      return parsed;
-    });
+const booleanWithDefault = (fallback: boolean) => z
+  .enum(['true', 'false'])
+  .optional()
+  .transform((value) => value === undefined ? fallback : value === 'true');
+
+const positiveInt = (fallback: number) => z
+  .string()
+  .optional()
+  .transform((value, ctx) => {
+    if (value === undefined || value === '') return fallback;
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be a positive integer' });
+      return z.NEVER;
+    }
+    return parsed;
+  });
+
+const nonNegativeInt = (fallback: number) => z
+  .string()
+  .optional()
+  .transform((value, ctx) => {
+    if (value === undefined || value === '') return fallback;
+    const parsed = Number(value);
+    if (!Number.isSafeInteger(parsed) || parsed < 0) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'must be a non-negative integer' });
+      return z.NEVER;
+    }
+    return parsed;
+  });
 
 const trustProxySchema = z
   .string()
@@ -54,9 +71,22 @@ const envSchema = z.object({
   ENCRYPTION_KEY: optionalString,
   DATABASE_URL: optionalTrimmedString,
   DATABASE_SSL_MODE: z.enum(['disable', 'require', 'verify-full']).default('disable'),
+  DATABASE_POOL_MAX: positiveInt(10),
+  DATABASE_POOL_MIN: nonNegativeInt(0),
+  DATABASE_IDLE_TIMEOUT_MS: positiveInt(30_000),
+  DATABASE_CONNECTION_TIMEOUT_MS: positiveInt(10_000),
+  DATABASE_STATEMENT_TIMEOUT_MS: positiveInt(30_000),
+  DATABASE_STARTUP_RETRIES: positiveInt(5),
+  DATABASE_MIGRATIONS_ON_STARTUP: booleanWithDefault(true),
   WORKSPACE_DIR: z.string().min(1).default('./workspace'),
   ALLOW_SHELL: booleanString,
   SHELL_SANDBOX_MODE: z.enum(['disabled', 'local-development']).default('disabled'),
+  ALLOW_PRIVATE_PROVIDER_URLS: booleanString,
+  PROVIDER_DISCOVERY_TIMEOUT_MS: positiveInt(15_000),
+  PROVIDER_REQUEST_TIMEOUT_MS: positiveInt(90_000),
+  PROVIDER_MAX_RESPONSE_BYTES: positiveInt(2_097_152),
+  PROVIDER_MAX_REDIRECTS: nonNegativeInt(2),
+  PROVIDER_MODEL_CACHE_TTL_MS: positiveInt(300_000),
   DEFAULT_ADMIN_EMAIL: optionalEmail,
   DEFAULT_ADMIN_PASSWORD: optionalString,
   TELEGRAM_POLLING: booleanString,
@@ -163,13 +193,11 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env) {
 
   const databaseKind = /^postgres(?:ql)?:/i.test(databaseUrl)
     ? 'postgresql' as const
-    : databaseUrl.startsWith('file:')
-      ? 'sqlite' as const
-      : databaseUrl
-        ? 'unsupported' as const
-        : 'unconfigured' as const;
+    : databaseUrl
+      ? 'unsupported' as const
+      : 'unconfigured' as const;
   if (databaseKind === 'unconfigured') addProblem(problems, 'DATABASE_URL', 'missing');
-  if (databaseKind === 'unsupported') addProblem(problems, 'DATABASE_URL', 'unsupported_scheme');
+  if (databaseKind === 'unsupported') addProblem(problems, 'DATABASE_URL', 'postgresql_required');
 
   if (!defaultAdminEmail) addProblem(problems, 'DEFAULT_ADMIN_EMAIL', 'missing');
   if (!defaultAdminPassword) addProblem(problems, 'DEFAULT_ADMIN_PASSWORD', 'missing');
@@ -202,7 +230,8 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env) {
 
   const localShellRequested = env.ALLOW_SHELL && env.SHELL_SANDBOX_MODE === 'local-development';
   const shellAvailable = localShellRequested && !isProduction;
-  if (isRailway && databaseKind === 'sqlite') warnings.push('railway_ephemeral_sqlite_database');
+  if (isProduction && env.ALLOW_PRIVATE_PROVIDER_URLS) warnings.push('private_provider_urls_enabled_in_production');
+  if (env.DATABASE_POOL_MIN > 0) warnings.push('pg_pool_min_is_advisory');
 
   const requiredVariables = [...new Set(problems.map((problem) => problem.variable))];
 
@@ -228,10 +257,23 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env) {
     databaseUrl,
     databaseKind,
     databaseSslMode: env.DATABASE_SSL_MODE,
+    databasePoolMax: env.DATABASE_POOL_MAX,
+    databasePoolMin: env.DATABASE_POOL_MIN,
+    databaseIdleTimeoutMs: env.DATABASE_IDLE_TIMEOUT_MS,
+    databaseConnectionTimeoutMs: env.DATABASE_CONNECTION_TIMEOUT_MS,
+    databaseStatementTimeoutMs: env.DATABASE_STATEMENT_TIMEOUT_MS,
+    databaseStartupRetries: env.DATABASE_STARTUP_RETRIES,
+    databaseMigrationsOnStartup: env.DATABASE_MIGRATIONS_ON_STARTUP,
     workspaceDir: env.WORKSPACE_DIR,
     allowShellRequested: env.ALLOW_SHELL,
     shellSandboxMode: env.SHELL_SANDBOX_MODE,
     shellAvailable,
+    allowPrivateProviderUrls: env.ALLOW_PRIVATE_PROVIDER_URLS,
+    providerDiscoveryTimeoutMs: env.PROVIDER_DISCOVERY_TIMEOUT_MS,
+    providerRequestTimeoutMs: env.PROVIDER_REQUEST_TIMEOUT_MS,
+    providerMaxResponseBytes: env.PROVIDER_MAX_RESPONSE_BYTES,
+    providerMaxRedirects: env.PROVIDER_MAX_REDIRECTS,
+    providerModelCacheTtlMs: env.PROVIDER_MODEL_CACHE_TTL_MS,
     defaultAdminEmail,
     defaultAdminPassword,
     telegramPolling: env.TELEGRAM_POLLING,
