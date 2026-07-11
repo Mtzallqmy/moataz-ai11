@@ -143,9 +143,6 @@ server/src/telegram.ts:174:  const existing = sessions.get(key);
 server/src/telegram.ts:191:  await run('UPDATE integrations SET meta = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [JSON.stringify(next), row.id, row.user_id]);
 server/src/telegram.ts:799:      if (now - (lastMessageAt.get(chatId) ?? 0) < 750) return;
 server/src/db-cli.ts:1:import { close, getMigrationStatus, migrate, ping } from './db.js';
-server/src/ws-tickets.ts:3:import { cryptoId, get, query, run, sha256 } from './db.js';
-server/src/ws-tickets.ts:19:  await run(
-server/src/ws-tickets.ts:43:  await run('DELETE FROM websocket_tickets WHERE expires_at <= CURRENT_TIMESTAMP OR used_at IS NOT NULL');
 server/src/network.ts:80:        const location = response.headers.get('location');
 server/src/terminal.ts:100:      const ticket = url.searchParams.get('ticket');
 server/src/terminal.ts:110:      const current = connectionsByUser.get(user.id) ?? 0;
