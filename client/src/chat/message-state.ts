@@ -1,3 +1,5 @@
+import type { AttachmentSummary } from '../types';
+
 export type ToolCall = {
   id: string;
   name: string;
@@ -14,6 +16,7 @@ export type ChatMessage = {
   role: 'user' | 'assistant';
   content: string;
   tool_calls: ToolCall[];
+  attachments?: AttachmentSummary[];
 };
 
 export function reconcileMessageResponse(
