@@ -1,0 +1,42 @@
+name: Phase 1-2 compile report 2
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  report:
+    if: github.head_ref == 'feat/providers-drizzle-phase12'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --include=dev --no-audit --no-fund
+      - shell: bash
+        run: |
+          set +e
+          mkdir -p .audit
+          npm run lint > .audit/lint-report-2.txt 2>&1
+          lint_code=$?
+          npm run typecheck > .audit/typecheck-report-2.txt 2>&1
+          type_code=$?
+          printf 'lint=%s\ntypecheck=%s\n' "$lint_code" "$type_code" > .audit/compile-status-2.txt
+          rm -f .github/workflows/phase12-compile-report-2.yml
+          exit 0
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .audit .github/workflows/phase12-compile-report-2.yml
+          git commit -m 'chore: capture updated phase 1-2 compile diagnostics'
+          git push origin HEAD:${{ github.head_ref }}
