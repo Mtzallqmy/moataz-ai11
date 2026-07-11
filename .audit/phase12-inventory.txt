@@ -83,6 +83,7 @@
 ./server/src/providers/types.ts
 ./server/src/redaction.test.ts
 ./server/src/redaction.ts
+./server/src/repositories/providers.repository.ts
 ./server/src/routes.test.ts
 ./server/src/routes.ts
 ./server/src/telegram.test.ts
@@ -110,6 +111,7 @@ server/src/providers/model-discovery.ts:40:    const active = inflight.get(key);
 server/src/providers/http.ts:40:    const value = headers.get(name)?.trim();
 server/src/providers/http.ts:103:    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
 server/src/providers/registry.ts:104:  const definition = registry.get(id);
+server/src/repositories/providers.repository.ts:242:    await database.transaction(async (tx) => {
 server/src/tools.ts:357:      return { url: response.url, status: response.status, contentType: response.headers.get('content-type'), response: payload };
 server/src/tools.ts:368:      const contentType = response.headers.get('content-type') ?? '';
 server/src/tools.ts:409:        const response = await new Octokit({ auth: integration.token }).repos.get({ owner, repo });
@@ -293,6 +295,7 @@ server/src/providers.test.ts:21:    expect(resolveProviderBaseUrl('openrouter', 
 server/src/providers.test.ts:22:    expect(resolveProviderBaseUrl('custom', 'https://llm.example.com/v1/models')).toBe('https://llm.example.com/v1');
 server/src/providers.test.ts:26:    expect(() => normalizeBaseUrl('file:///tmp/model')).toThrow(/HTTP/i);
 server/src/providers.test.ts:27:    expect(() => normalizeBaseUrl('https://user:pass@example.com/v1')).toThrow(/Credentials/i);
+server/src/repositories/providers.repository.ts:52:    : { modelDiscovery: null, streaming: null, tools: null, vision: null, embeddings: null, responsesApi: null };
 server/src/tools.ts:11:import { upstreamAppError } from './upstream-errors.js';
 server/src/tools.ts:229:    throw new AppError('integration_invalid_response', 502, `${service} returned invalid JSON.`, { upstreamStatus: status });
 server/src/tools.ts:332:      if (!response.ok) throw new AppError('sandbox_execution_failed', 502, 'The sandbox execution failed.', { upstreamStatus: response.status, response: payload });
@@ -420,6 +423,7 @@ client/src/pages/TerminalPage.tsx:9:type TerminalEvent = { type: 'session_starte
 ./server/src/config.test.ts:9:  DATABASE_URL: 'postgresql://user:password@example.com:5432/app',
 ./server/src/config.test.ts:68:      'DATABASE_URL',
 ./server/src/config.test.ts:93:    const config = loadConfig({ ...railwayBase, DATABASE_URL: 'file:./data/moataz.db' });
+./server/src/repositories/providers.repository.ts:1:import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 ./server/src/db.ts:4:import Database from 'better-sqlite3';
 ./server/src/db.ts:30:  pgPool = new Pool({
 ./server/src/db.ts:106:    await run(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
