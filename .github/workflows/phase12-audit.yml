@@ -17,8 +17,13 @@ jobs:
     if: github.head_ref == 'feat/provider-drizzle-phase12'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: |
+      - name: Audit tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch '${{ github.head_ref }}' "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" repo
+          cd repo
           echo '=== RUNTIME ==='
           node --version
           npm --version
@@ -30,24 +35,39 @@ jobs:
     if: github.head_ref == 'feat/provider-drizzle-phase12'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: |
+      - name: Audit database
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch '${{ github.head_ref }}' "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" repo
+          cd repo
           echo '=== DATABASE REFERENCES ==='
           grep -RInE "better-sqlite3|from 'pg'|from \"pg\"|SELECT |INSERT |UPDATE |DELETE |CREATE TABLE|BEGIN|COMMIT|ROLLBACK|query\(|run\(|get\(" server client 2>/dev/null | head -3000 || true
   providers:
     if: github.head_ref == 'feat/provider-drizzle-phase12'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: |
+      - name: Audit providers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch '${{ github.head_ref }}' "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" repo
+          cd repo
           echo '=== PROVIDER REFERENCES ==='
           grep -RInE "provider|OpenAI|Anthropic|Gemini|models|chat/completions|responses|tool_calls|stream" server client 2>/dev/null | head -3000 || true
   config:
     if: github.head_ref == 'feat/provider-drizzle-phase12'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - run: |
+      - name: Audit configuration
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch '${{ github.head_ref }}' "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" repo
+          cd repo
           echo '=== PACKAGE ==='
           cat package.json
           echo '=== ENV REFERENCES ==='
