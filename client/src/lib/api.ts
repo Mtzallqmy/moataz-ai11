@@ -4,8 +4,8 @@ export class ApiError extends Error {
   readonly details?: unknown;
   readonly requestId?: string;
 
-  constructor(status: number, code: string, details?: unknown, requestId?: string) {
-    super(code);
+  constructor(status: number, code: string, details?: unknown, requestId?: string, message?: string) {
+    super(message ?? code);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
@@ -15,6 +15,10 @@ export class ApiError extends Error {
 }
 
 export type ApiRequestOptions = RequestInit & { accessToken?: string };
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
 
 export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
   const { accessToken, headers, ...rest } = options;
@@ -47,10 +51,31 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
   }
 
   if (!response.ok) {
-    const record = data !== null && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : {};
-    const code = typeof record.error === 'string' ? record.error : 'request_failed';
-    const requestId = typeof record.requestId === 'string' ? record.requestId : response.headers.get('x-request-id') ?? undefined;
-    throw new ApiError(response.status, code, record.details, requestId);
+    const root = objectRecord(data);
+    const nested = objectRecord(root.error);
+    const code = typeof nested.code === 'string'
+      ? nested.code
+      : typeof root.error === 'string'
+        ? root.error
+        : typeof root.code === 'string'
+          ? root.code
+          : 'request_failed';
+    const requestId = typeof nested.requestId === 'string'
+      ? nested.requestId
+      : typeof root.requestId === 'string'
+        ? root.requestId
+        : response.headers.get('x-request-id') ?? undefined;
+    const details = root.details !== undefined
+      ? root.details
+      : Object.keys(nested).length > 0
+        ? nested
+        : undefined;
+    const message = typeof nested.message === 'string'
+      ? nested.message
+      : typeof root.message === 'string'
+        ? root.message
+        : code;
+    throw new ApiError(response.status, code, details, requestId, message);
   }
   return data as T;
 }
