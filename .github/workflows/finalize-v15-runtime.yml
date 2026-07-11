@@ -1,0 +1,84 @@
+name: Finalize v1.5 runtime
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.head_ref == 'fix/provider-session-attachments-v1.5'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - name: Make failed requests cleanly retryable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('server/src/routes.ts')
+          text = path.read_text()
+          endpoint = text.index("  app.post('/api/chats/:id/messages'")
+          declaration = text.index('    let runId: string | undefined;', endpoint)
+          try_start = text.index('    try {', declaration)
+          input_line = text.index('      const input = parseInput(messageSchema, req.body);', try_start)
+          attachment_line = text.index('      const attachmentIds = input.attachmentIds ?? [];', input_line)
+          declaration_end = attachment_line + len('      const attachmentIds = input.attachmentIds ?? [];')
+          replacement = """    let runId: string | undefined;
+              let userMessageId: string | undefined;
+              let attachmentIds: string[] = [];
+              let locked = false;
+              try {
+                const input = parseInput(messageSchema, req.body);
+                attachmentIds = input.attachmentIds ?? [];"""
+          text = text[:declaration] + replacement + text[declaration_end:]
+
+          endpoint = text.index("  app.post('/api/chats/:id/messages'")
+          user_declaration = text.index('      const userMessageId = cryptoId();', endpoint)
+          text = text[:user_declaration] + '      userMessageId = cryptoId();' + text[user_declaration + len('      const userMessageId = cryptoId();'):]
+
+          endpoint = text.index("  app.post('/api/chats/:id/messages'")
+          catch_start = text.index('    } catch (error) {', endpoint)
+          finally_start = text.index('    } finally {', catch_start)
+          catch_replacement = """    } catch (error) {
+              if (userMessageId) {
+                await transaction([
+                  {
+                    sql: 'UPDATE attachments SET message_id = NULL WHERE message_id = ? AND chat_id = ? AND user_id = ?',
+                    params: [userMessageId, chatId, req.user!.id]
+                  },
+                  {
+                    sql: 'DELETE FROM messages WHERE id = ? AND chat_id = ? AND user_id = ? AND role = ?',
+                    params: [userMessageId, chatId, req.user!.id, 'user']
+                  }
+                ]).catch(() => undefined);
+              }
+              if (runId) {
+                await run('UPDATE agent_runs SET status = ?, error_code = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?', ['failed', errorCode(error), runId]).catch(() => undefined);
+              }
+              next(error);
+          """
+          text = text[:catch_start] + catch_replacement + text[finally_start:]
+          path.write_text(text)
+          PY
+          rm -f .github/workflows/fix-v15-runtime.yml
+          rm -f .github/workflows/diagnose-v15-types.yml
+          rm -f .github/workflows/finalize-v15-runtime.yml
+      - name: Commit final runtime corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: make attachment requests retry-safe and remove temporary workflows'
+          git push origin HEAD:${{ github.head_ref }}
