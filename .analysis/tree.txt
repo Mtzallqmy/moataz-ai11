@@ -1,6 +1,7 @@
 .analysis/README.md
 .analysis/current-state.md
 .analysis/phase-plan.md
+.analysis/phase1-blob-diagnostics.txt
 .analysis/relevant-files.txt
 .analysis/retry-phase1.txt
 .analysis/tree.txt
