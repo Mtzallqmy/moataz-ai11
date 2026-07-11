@@ -1,0 +1,55 @@
+name: Generate phase 1-2 audit snapshot
+
+on:
+  push:
+    branches: [feat/provider-registry-drizzle-v2]
+    paths:
+      - '.audit/trigger.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/provider-registry-drizzle-v2
+          fetch-depth: 0
+
+      - name: Build source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .audit
+          {
+            echo '# FILE TREE'
+            find . -path './.git' -prune -o -path './node_modules' -prune -o -path './dist' -prune -o -type f -print | sort
+            echo
+            echo '# RELEVANT SOURCE FILES'
+            while IFS= read -r file; do
+              case "$file" in
+                ./package-lock.json|./.audit/source-snapshot.txt) continue ;;
+              esac
+              case "$file" in
+                *.ts|*.tsx|*.js|*.mjs|*.json|*.sql|*.yml|*.yaml|*.md|*.css|*/Dockerfile|./Dockerfile|*.example|*.toml)
+                  echo
+                  echo "===== FILE: ${file#./} ====="
+                  cat "$file"
+                  ;;
+              esac
+            done < <(find . -path './.git' -prune -o -path './node_modules' -prune -o -path './dist' -prune -o -type f -print | sort)
+          } > .audit/source-snapshot.txt
+          wc -c .audit/source-snapshot.txt
+
+      - name: Commit snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .audit/source-snapshot.txt
+          git commit -m 'chore: capture phase 1-2 source audit snapshot'
+          git push origin HEAD:feat/provider-registry-drizzle-v2
