@@ -1098,6 +1098,7 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
     let locked = false;
     try {
       const input = parseInput(messageSchema, req.body);
+      const attachmentIds = input.attachmentIds ?? [];
       const key = idempotencyKey(req, input.idempotencyKey);
       const chat = await get<ChatRow>('SELECT * FROM chats WHERE id = ? AND user_id = ?', [chatId, req.user!.id]);
       if (!chat) throw new AppError('chat_not_found', 404);
@@ -1122,7 +1123,7 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       const running = await get('SELECT id FROM agent_runs WHERE chat_id = ? AND status = ?', [chatId, 'running']);
       if (running) throw new AppError('chat_busy', 409);
 
-      const attachmentRows = await pendingAttachments(input.attachmentIds, chatId, req.user!.id);
+      const attachmentRows = await pendingAttachments(attachmentIds, chatId, req.user!.id);
       const selectedProvider = await resolveProviderForChat(req.user!.id, chat);
       const previousRows = await query<{ role: string; content: string }>(
         'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?',
@@ -1141,7 +1142,7 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
           sql: 'INSERT INTO agent_runs (id, chat_id, user_id, status, log, started_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
           params: [runId, chatId, req.user!.id, 'running', '']
         },
-        ...input.attachmentIds.map((attachmentId) => ({
+        ...attachmentIds.map((attachmentId) => ({
           sql: 'UPDATE attachments SET message_id = ? WHERE id = ? AND chat_id = ? AND user_id = ? AND message_id IS NULL',
           params: [userMessageId, attachmentId, chatId, req.user!.id]
         }))
@@ -1187,7 +1188,7 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
           userId: req.user!.id,
           chatId,
           messages,
-          model: chat.model ?? undefined,
+          ...(chat.model ? { model: chat.model } : {}),
           tools: chat.mode === 'agent' ? availableTools : []
         });
 

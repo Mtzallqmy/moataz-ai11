@@ -38,8 +38,15 @@ const textExtensions = new Set([
   '.rs', '.php', '.rb', '.sh', '.bash', '.sql', '.graphql', '.gql', '.log'
 ]);
 
+function stripControlCharacters(value: string): string {
+  return [...value].filter((character) => {
+    const code = character.charCodeAt(0);
+    return code >= 32 && code != 127;
+  }).join('');
+}
+
 function safeName(raw: string): string {
-  const decoded = raw.normalize('NFKC').replace(/[\u0000-\u001f\u007f]/g, '').trim();
+  const decoded = stripControlCharacters(raw.normalize('NFKC')).trim();
   const base = path.basename(decoded || 'attachment.bin').replace(/[\\/:*?"<>|]/g, '_');
   return (base || 'attachment.bin').slice(0, 180);
 }
@@ -184,7 +191,7 @@ function zipEntries(buffer: Buffer): Array<{ name: string; compressedBytes: numb
     const commentLength = buffer.readUInt16LE(offset + 32);
     const end = offset + 46 + fileNameLength;
     if (end > buffer.length) break;
-    const name = buffer.subarray(offset + 46, end).toString('utf8').replace(/[\u0000-\u001f]/g, '').slice(0, 300);
+    const name = buffer.subarray(offset + 46, end).toString('utf8').split('').filter((character) => character.charCodeAt(0) >= 32).join('').slice(0, 300);
     if (name && !name.startsWith('__MACOSX/')) entries.push({ name, compressedBytes, uncompressedBytes });
     offset = end + extraLength + commentLength - 1;
   }
@@ -192,7 +199,7 @@ function zipEntries(buffer: Buffer): Array<{ name: string; compressedBytes: numb
 }
 
 function cleanText(value: string): string {
-  return value.replace(/\u0000/g, '').replace(/\r\n/g, '\n').trim();
+  return value.split('').filter((character) => character.charCodeAt(0) !== 0).join('').replace(/\r\n/g, '\n').trim();
 }
 
 export async function attachmentContext(rows: readonly AttachmentRow[]): Promise<{ text: string; images: LLMImage[] }> {

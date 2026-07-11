@@ -127,18 +127,13 @@ async function providerJson(
 ): Promise<unknown> {
   const rawUrl = providerApiUrl(provider, resource);
   const url = await assertSafeOutboundUrl(rawUrl, !config.isProduction && provider.type === 'ollama');
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: init.method,
-      headers: openAiHeaders(provider),
-      ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
-      signal,
-      redirect: 'manual'
-    });
-  } catch (error) {
-    throw error;
-  }
+  const response = await fetch(url, {
+    method: init.method,
+    headers: openAiHeaders(provider),
+    ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
+    signal,
+    redirect: 'manual'
+  });
   if (response.status >= 300 && response.status < 400) {
     throw Object.assign(new Error('Provider redirects are not accepted for API requests.'), {
       status: response.status,
@@ -385,7 +380,7 @@ export async function listProviderModels(provider: Provider): Promise<{ supporte
 function modelScore(model: string): number {
   const value = model.toLowerCase();
   let score = 0;
-  if (value.includes(':free') || /(^|[\/_-])free($|[\/_-])/.test(value)) score -= 10_000;
+  if (value.includes(':free') || /(^|[/_-])free($|[/_-])/.test(value)) score -= 10_000;
   if (/flash|mini|lite|small|instant|fast/.test(value)) score -= 1_000;
   if (/instruct|chat|assistant/.test(value)) score -= 250;
   if (/latest/.test(value)) score -= 50;
