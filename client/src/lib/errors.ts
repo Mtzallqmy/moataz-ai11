@@ -1,25 +1,28 @@
 import { ApiError } from './api';
 import type { Language } from './i18n';
+import type { ProviderDiagnostic } from '../types';
 
-type ErrorDetails = {
+export type ErrorDetails = {
   stage?: string;
   providerMessage?: string;
   retryable?: boolean;
   reason?: string;
   service?: string;
   upstreamStatus?: number;
+  suggestion?: string;
+  diagnostic?: ProviderDiagnostic;
 };
 
 const ar: Record<string, string> = {
   network_error: 'تعذر الوصول إلى الخادم. تحقق من الاتصال وحاول مجددًا.',
   provider_authentication: 'رفض المزود مفتاح API. تحقق من المفتاح ثم اختبر الاتصال.',
   provider_authorization: 'المفتاح صحيح لكن لا يملك الصلاحية المطلوبة.',
-  provider_billing: 'المزود رفض الطلب بسبب الرصيد أو الفوترة.',
-  provider_rate_limit: 'تم تجاوز حد الطلبات لدى المزود. حاول بعد قليل.',
+  provider_billing: 'المزود رفض الطلب بسبب الرصيد أو الفوترة. المفتاح قد يكون صحيحًا لكن الحساب يحتاج رصيدًا أو دفعًا.',
+  provider_rate_limit: 'تم تجاوز حد الطلبات أو التوكنات لدى المزود. حاول بعد قليل.',
   provider_model_not_found: 'النموذج غير موجود أو غير متاح لهذا الحساب.',
-  provider_invalid_request: 'إعداد المزود أو اسم النموذج غير صحيح.',
+  provider_invalid_request: 'إعداد المزود أو اسم النموذج أو Base URL غير صحيح.',
   provider_timeout: 'انتهت مهلة اتصال المزود.',
-  provider_network: 'تعذر الاتصال بخادم المزود.',
+  provider_network: 'تعذر الاتصال بخادم المزود. تحقق من Base URL وDNS وTLS.',
   provider_service_unavailable: 'خدمة المزود غير متاحة مؤقتًا.',
   provider_unknown: 'أعاد المزود خطأ غير متوقع.',
   provider_empty_response: 'اتصل النظام بالمزود لكنه أعاد ردًا فارغًا.',
@@ -42,7 +45,7 @@ const ar: Record<string, string> = {
   integration_not_found: 'التكامل غير موجود أو تم حذفه.',
   telegram_chat_id_required: 'اختر Chat ID مسموحًا لتكامل Telegram.',
   sandbox_base_url_required: 'أدخل رابط خدمة Sandbox الخارجية.',
-  sandbox_integration_not_configured: 'أضف تكامل Sandbox خارجيًا وتمحقق منه أولًا.',
+  sandbox_integration_not_configured: 'أضف تكامل Sandbox خارجيًا وتحقق منه أولًا.',
   sandbox_execution_failed: 'فشل تنفيذ الأمر داخل خدمة Sandbox الخارجية.',
   web_search_integration_not_configured: 'أضف Brave Search أو Tavily واختبر التكامل لتفعيل البحث.',
   web_search_failed: 'فشل البحث على الويب.',
@@ -63,12 +66,12 @@ const en: Record<string, string> = {
   network_error: 'Could not reach the server. Check your connection and try again.',
   provider_authentication: 'The provider rejected the API key.',
   provider_authorization: 'The key does not have the required permission.',
-  provider_billing: 'The provider rejected the request because of credits or billing.',
-  provider_rate_limit: 'The provider rate limit was reached.',
+  provider_billing: 'The provider rejected the request because of credits or billing. The key may be valid but the account needs credits or payment.',
+  provider_rate_limit: 'The provider request or token limit was reached.',
   provider_model_not_found: 'The selected model is unavailable or does not exist.',
-  provider_invalid_request: 'The provider configuration or model name is invalid.',
+  provider_invalid_request: 'The provider configuration, model name, or base URL is invalid.',
   provider_timeout: 'The provider request timed out.',
-  provider_network: 'Could not connect to the provider.',
+  provider_network: 'Could not connect to the provider. Check the base URL, DNS, and TLS.',
   provider_service_unavailable: 'The provider is temporarily unavailable.',
   provider_unknown: 'The provider returned an unexpected error.',
   provider_empty_response: 'The provider returned an empty response.',
@@ -121,8 +124,10 @@ export function formatError(error: unknown, language: Language): string {
   const base = dictionary[error.code] ?? dictionary.request_failed!;
   const parts = [base];
   if (details.providerMessage && details.providerMessage !== error.code) parts.push(details.providerMessage);
+  if (details.suggestion) parts.push(details.suggestion);
+  if (details.diagnostic?.note) parts.push(details.diagnostic.note);
   if (error.requestId) parts.push(language === 'ar' ? `رقم الطلب: ${error.requestId}` : `Request ID: ${error.requestId}`);
-  return parts.join('\n');
+  return [...new Set(parts)].join('\n');
 }
 
 export function errorDetails(error: unknown): ErrorDetails | undefined {
