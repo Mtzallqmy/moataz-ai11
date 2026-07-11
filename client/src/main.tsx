@@ -14,6 +14,13 @@ import './styles/app.css';
 type T = (key: TranslationKey) => string;
 type Page = 'home' | 'chat' | 'providers' | 'integrations' | 'terminal' | 'settings';
 
+const pages = new Set<Page>(['home', 'chat', 'providers', 'integrations', 'terminal', 'settings']);
+
+function pageFromLocation(): Page {
+  const value = new URLSearchParams(window.location.search).get('page') as Page | null;
+  return value && pages.has(value) ? value : 'home';
+}
+
 function App() {
   const { status, logout } = useAuth();
   const [language, setLanguage] = useState<Language>((localStorage.getItem('moataz_lang') as Language | null) ?? 'ar');
@@ -63,9 +70,24 @@ const navigation: Array<{ page: Page; label: TranslationKey; icon: string }> = [
 
 function Dashboard({ t, language, setLanguage, theme, setTheme, onLogout }: { t: T; language: Language; setLanguage: (value: Language) => void; theme: string; setTheme: (value: string) => void; onLogout: () => void }) {
   const { request, user } = useAuth();
-  const [page, setPage] = useState<Page>('home');
+  const [page, setPage] = useState<Page>(() => pageFromLocation());
   const [menuOpen, setMenuOpen] = useState(false);
-  const navigate = (value: Page) => { setPage(value); setMenuOpen(false); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+
+  useEffect(() => {
+    const handlePopState = () => setPage(pageFromLocation());
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigate = (value: Page) => {
+    setPage(value);
+    setMenuOpen(false);
+    const url = new URL(window.location.href);
+    if (value === 'home') url.searchParams.delete('page');
+    else url.searchParams.set('page', value);
+    window.history.pushState({}, '', url);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   return <div className="app-shell">
     <header className="mobile-header"><div className="brand"><div className="logo small">M</div><strong>Moataz AI</strong></div><button type="button" className="icon-button menu-button" onClick={() => setMenuOpen((value) => !value)} aria-expanded={menuOpen} aria-label={t('menu')}>☰</button></header>
