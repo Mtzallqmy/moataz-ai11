@@ -95,7 +95,7 @@ export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
       }
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Request-Id', 'X-File-Name'],
     exposedHeaders: ['X-Request-Id'],
     maxAge: 600
   }));
@@ -158,6 +158,11 @@ export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
 
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const requestIdValue = typeof res.locals.requestId === 'string' ? res.locals.requestId : undefined;
+    const parserError = error !== null && typeof error === 'object' && !Array.isArray(error) ? error as Record<string, unknown> : {};
+    if (parserError.type === 'entity.too.large') {
+      res.status(413).json({ error: 'request_too_large', requestId: requestIdValue });
+      return;
+    }
     if (error instanceof AppError) {
       logger.warn('request_failed', { requestId: requestIdValue, code: error.code, status: error.status });
       res.status(error.status).json({ error: error.code, ...(error.details !== undefined ? { details: error.details } : {}), requestId: requestIdValue });

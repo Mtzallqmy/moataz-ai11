@@ -183,6 +183,13 @@ const telegramSchema = z.object({ chatId: z.union([z.string(), z.number()]).opti
 const shellSchema = z.object({ command: z.string().min(1).max(8192), timeoutMs: z.number().int().min(1000).max(300_000).optional() }).strict();
 const webFetchSchema = z.object({ url: z.string().url().max(2048), maxChars: z.number().int().min(500).max(100_000).default(20_000) }).strict();
 const webSearchSchema = z.object({ query: z.string().trim().min(1).max(500), count: z.number().int().min(1).max(10).default(5) }).strict();
+const httpRequestSchema = z.object({
+  url: z.string().url().max(2048),
+  method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).default('GET'),
+  headers: z.record(z.string().max(4000)).default({}),
+  body: z.unknown().optional(),
+  timeoutMs: z.number().int().min(1000).max(120000).optional()
+}).strict();
 
 async function listEntries(root: string, directory: string, recursive: boolean, maxDepth: number): Promise<Array<Record<string, unknown>>> {
   const output: Array<Record<string, unknown>> = [];
@@ -327,6 +334,30 @@ const definitions: ToolDefinition[] = [
     }
   },
   {
+    name: 'http_request', description: 'Call a public HTTP API after explicit confirmation', risk: 'medium', requiresConfirmation: true, roles: ['admin', 'user'], inputSchema: httpRequestSchema,
+    execute: async (args) => {
+      const input = httpRequestSchema.parse(args);
+      const forbidden = new Set(['host', 'content-length', 'connection', 'cookie', 'set-cookie', 'proxy-authorization']);
+      const headers = Object.fromEntries(Object.entries(input.headers).filter(([name]) => !forbidden.has(name.toLowerCase())));
+      if (!Object.keys(headers).some((name) => name.toLowerCase() === 'accept')) headers.Accept = 'application/json, text/plain;q=0.9, */*;q=0.5';
+      let body: string | undefined;
+      if (input.body !== undefined && input.method !== 'GET') {
+        body = typeof input.body === 'string' ? input.body : JSON.stringify(input.body);
+        if (!Object.keys(headers).some((name) => name.toLowerCase() === 'content-type')) headers['Content-Type'] = 'application/json';
+      }
+      const response = await fetchWithValidatedRedirects(input.url, {
+        method: input.method,
+        headers,
+        ...(body !== undefined ? { body } : {})
+      }, { timeoutMs: input.timeoutMs ?? config.webFetchTimeoutMs, maxRedirects: input.method === 'GET' ? 3 : 0 });
+      const raw = await readLimitedText(response, config.maxWebFetchBytes);
+      let payload: unknown = raw;
+      try { payload = JSON.parse(raw) as unknown; } catch { /* keep text */ }
+      if (!response.ok) throw new AppError('http_request_failed', 502, 'The API returned an error.', { upstreamStatus: response.status, response: payload });
+      return { url: response.url, status: response.status, contentType: response.headers.get('content-type'), response: payload };
+    }
+  },
+  {
     name: 'web_fetch', description: 'Fetch and extract readable text from a public HTTP or HTTPS page', risk: 'low', requiresConfirmation: false, roles: ['admin', 'user'], inputSchema: webFetchSchema,
     execute: async (args) => {
       const input = webFetchSchema.parse(args);
@@ -424,6 +455,7 @@ const toolParameters: Record<string, Record<string, unknown>> = {
   move_path: { type: 'object', additionalProperties: false, required: ['from', 'to'], properties: { from: { type: 'string' }, to: { type: 'string' } } },
   file_stat: { type: 'object', additionalProperties: false, required: ['path'], properties: { path: { type: 'string' } } },
   shell: { type: 'object', additionalProperties: false, required: ['command'], properties: { command: { type: 'string' }, timeoutMs: { type: 'integer', minimum: 1000, maximum: 300000 } } },
+  http_request: { type: 'object', additionalProperties: false, required: ['url'], properties: { url: { type: 'string', format: 'uri' }, method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] }, headers: { type: 'object', additionalProperties: { type: 'string' } }, body: {}, timeoutMs: { type: 'integer', minimum: 1000, maximum: 120000 } } },
   web_fetch: { type: 'object', additionalProperties: false, required: ['url'], properties: { url: { type: 'string', format: 'uri' }, maxChars: { type: 'integer', minimum: 500, maximum: 100000 } } },
   web_search: { type: 'object', additionalProperties: false, required: ['query'], properties: { query: { type: 'string' }, count: { type: 'integer', minimum: 1, maximum: 10 } } },
   github_repo_info: { type: 'object', additionalProperties: false, required: ['repo'], properties: { repo: { type: 'string' } } },
