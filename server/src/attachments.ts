@@ -2,23 +2,12 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from './config.js';
-import { type DbRow, query, run } from './db.js';
 import { AppError } from './errors.js';
+import { attachmentsRepository, type AttachmentRecord } from './repositories/attachments.repository.js';
 import { getUserRoot } from './tools.js';
 import type { LLMImage } from './llm.js';
 
-export type AttachmentRow = DbRow & {
-  id: string;
-  chat_id: string;
-  user_id: string;
-  message_id: string | null;
-  name: string;
-  mime_type: string;
-  size_bytes: number | string;
-  storage_path: string;
-  sha256: string;
-  created_at: string;
-};
+export type AttachmentRow = AttachmentRecord;
 
 export type AttachmentSummary = {
   id: string;
@@ -112,56 +101,39 @@ export async function storeAttachment(input: {
   await atomicBinaryWrite(target, input.body);
   const digest = crypto.createHash('sha256').update(input.body).digest('hex');
   try {
-    await run(
-      `INSERT INTO attachments
-       (id, chat_id, user_id, message_id, name, mime_type, size_bytes, storage_path, sha256)
-       VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
-      [input.id, input.chatId, input.userId, name, mimeType, input.body.length, relative.split(path.sep).join('/'), digest]
-    );
+    const row = await attachmentsRepository.create({
+      id: input.id,
+      chatId: input.chatId,
+      userId: input.userId,
+      name,
+      mimeType,
+      sizeBytes: input.body.length,
+      storagePath: relative.split(path.sep).join('/'),
+      sha256: digest
+    });
+    return summarizeAttachment(row);
   } catch (error) {
     await fs.rm(target, { force: true }).catch(() => undefined);
     throw error;
   }
-  return {
-    id: input.id,
-    name,
-    mime_type: mimeType,
-    size_bytes: input.body.length,
-    kind: kindFor(name, mimeType),
-    created_at: new Date().toISOString()
-  };
 }
 
 export async function attachmentsForChat(chatId: string, userId: string): Promise<AttachmentRow[]> {
-  return query<AttachmentRow>(
-    `SELECT id, chat_id, user_id, message_id, name, mime_type, size_bytes, storage_path, sha256, created_at
-     FROM attachments WHERE chat_id = ? AND user_id = ? ORDER BY created_at ASC`,
-    [chatId, userId]
-  );
+  return attachmentsRepository.listForChat(chatId, userId);
 }
 
 export async function pendingAttachments(ids: readonly string[], chatId: string, userId: string): Promise<AttachmentRow[]> {
   if (ids.length === 0) return [];
-  const rows = await query<AttachmentRow>(
-    `SELECT id, chat_id, user_id, message_id, name, mime_type, size_bytes, storage_path, sha256, created_at
-     FROM attachments WHERE chat_id = ? AND user_id = ? AND message_id IS NULL`,
-    [chatId, userId]
-  );
-  const requested = new Set(ids);
-  const selected = rows.filter((row) => requested.has(row.id));
-  if (selected.length !== requested.size) {
+  const selected = await attachmentsRepository.pending(ids, chatId, userId);
+  if (selected.length !== new Set(ids).size) {
     throw new AppError('attachment_not_found', 404, 'One or more attachments are missing, already used, or belong to another chat.');
   }
-  return ids.map((id) => selected.find((row) => row.id === id)!).filter(Boolean);
+  return selected;
 }
 
 export async function bindAttachments(ids: readonly string[], messageId: string, chatId: string, userId: string): Promise<void> {
-  for (const id of ids) {
-    await run(
-      `UPDATE attachments SET message_id = ? WHERE id = ? AND chat_id = ? AND user_id = ? AND message_id IS NULL`,
-      [messageId, id, chatId, userId]
-    );
-  }
+  const count = await attachmentsRepository.bind(ids, messageId, chatId, userId);
+  if (count !== new Set(ids).size) throw new AppError('attachment_not_found', 404);
 }
 
 async function attachmentPath(row: AttachmentRow): Promise<string> {
@@ -173,9 +145,8 @@ async function attachmentPath(row: AttachmentRow): Promise<string> {
 }
 
 export async function deletePendingAttachment(id: string, chatId: string, userId: string): Promise<void> {
-  const rows = await pendingAttachments([id], chatId, userId);
-  const row = rows[0]!;
-  await run('DELETE FROM attachments WHERE id = ? AND chat_id = ? AND user_id = ? AND message_id IS NULL', [id, chatId, userId]);
+  const row = await attachmentsRepository.deletePending(id, chatId, userId);
+  if (!row) throw new AppError('attachment_not_found', 404);
   await fs.rm(await attachmentPath(row), { force: true }).catch(() => undefined);
 }
 
