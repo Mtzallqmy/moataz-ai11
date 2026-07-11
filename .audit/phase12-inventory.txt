@@ -84,6 +84,7 @@
 ./server/src/redaction.test.ts
 ./server/src/redaction.ts
 ./server/src/repositories/agent-runs.repository.ts
+./server/src/repositories/attachments.repository.ts
 ./server/src/repositories/chats.repository.ts
 ./server/src/repositories/integrations.repository.ts
 ./server/src/repositories/messages.repository.ts
@@ -435,6 +436,7 @@ client/src/pages/TerminalPage.tsx:9:type TerminalEvent = { type: 'session_starte
 ./server/src/config.test.ts:93:    const config = loadConfig({ ...railwayBase, DATABASE_URL: 'file:./data/moataz.db' });
 ./server/src/repositories/agent-runs.repository.ts:1:import { and, eq, isNull, sql } from 'drizzle-orm';
 ./server/src/repositories/sessions.repository.ts:1:import { and, desc, eq, gt, isNull, ne, sql } from 'drizzle-orm';
+./server/src/repositories/attachments.repository.ts:1:import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 ./server/src/repositories/providers.repository.ts:1:import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 ./server/src/repositories/users.repository.ts:1:import { eq, sql } from 'drizzle-orm';
 ./server/src/repositories/messages.repository.ts:1:import { and, asc, desc, eq, sql } from 'drizzle-orm';
