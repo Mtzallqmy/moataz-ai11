@@ -1,10 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { config } from '../../config.js';
 import { AppError } from '../../errors.js';
 import type { LLMToolCall, Msg } from '../../llm-types.js';
-import { getProviderDefinition } from '../registry.js';
 import { resolveProviderUrls } from '../base-url.js';
-import { providerHttpJson } from '../http.js';
+import { providerHttpJson, providerHttpStream } from '../http.js';
+import { getProviderDefinition } from '../registry.js';
 import type {
   DiscoveredModel,
   ModelDiscoveryResult,
@@ -24,13 +25,8 @@ const modelObjectSchema = z.object({
   context_length: z.number().int().positive().optional(),
   contextLength: z.number().int().positive().optional()
 }).passthrough();
-
-const modelArraySchema = z.array(z.union([z.string(), modelObjectSchema]));
-const modelEnvelopeSchema = z.union([
-  z.object({ data: modelArraySchema }).passthrough(),
-  z.object({ models: modelArraySchema }).passthrough(),
-  modelArraySchema
-]);
+const modelEntrySchema = z.union([z.string(), modelObjectSchema]);
+const modelArraySchema = z.array(modelEntrySchema);
 
 const chatResponseSchema = z.object({
   model: z.string().optional(),
@@ -67,8 +63,7 @@ function headers(configValue: ProviderRuntimeConfig): Record<string, string> {
   }
   const allowed = new Set(definition.allowedCustomHeaders.map((name) => name.toLowerCase()));
   for (const [name, value] of Object.entries(configValue.customHeaders ?? {})) {
-    if (!allowed.has(name.toLowerCase())) continue;
-    if (value.trim()) output[name] = value.trim().slice(0, 2048);
+    if (allowed.has(name.toLowerCase()) && value.trim()) output[name] = value.trim().slice(0, 2048);
   }
   return output;
 }
@@ -93,7 +88,7 @@ function normalized(configValue: ProviderRuntimeConfig): ProviderRuntimeConfig {
   };
 }
 
-function discoveredModel(value: z.infer<typeof modelObjectSchema> | string): DiscoveredModel | undefined {
+function discoveredModel(value: z.infer<typeof modelEntrySchema>): DiscoveredModel | undefined {
   if (typeof value === 'string') {
     const id = value.trim();
     return id ? { id } : undefined;
@@ -111,19 +106,19 @@ function discoveredModel(value: z.infer<typeof modelObjectSchema> | string): Dis
 }
 
 function parseModels(payload: unknown, allowDirectArray: boolean): DiscoveredModel[] {
-  const parsed = modelEnvelopeSchema.safeParse(payload);
-  if (!parsed.success) throw new AppError('provider_invalid_response', 502, 'The models endpoint returned an invalid schema.');
-  if (Array.isArray(parsed.data) && !allowDirectArray) {
-    throw new AppError('provider_invalid_response', 502, 'A direct model array is only accepted for custom providers.');
+  let rawList: unknown;
+  if (Array.isArray(payload)) {
+    if (!allowDirectArray) throw new AppError('provider_invalid_response', 502, 'A direct model array is accepted only for custom providers.');
+    rawList = payload;
+  } else {
+    const root = record(payload);
+    rawList = Array.isArray(root.data) ? root.data : Array.isArray(root.models) ? root.models : undefined;
   }
-  const list = Array.isArray(parsed.data)
-    ? parsed.data
-    : 'data' in parsed.data
-      ? parsed.data.data
-      : parsed.data.models;
+  const parsed = modelArraySchema.safeParse(rawList);
+  if (!parsed.success) throw new AppError('provider_invalid_response', 502, 'The models endpoint returned an invalid schema.');
   const seen = new Set<string>();
   const output: DiscoveredModel[] = [];
-  for (const entry of list) {
+  for (const entry of parsed.data) {
     const model = discoveredModel(entry);
     if (!model || seen.has(model.id)) continue;
     seen.add(model.id);
@@ -134,9 +129,7 @@ function parseModels(payload: unknown, allowDirectArray: boolean): DiscoveredMod
 
 function openAiMessages(messages: readonly Msg[]): unknown[] {
   return messages.map((message) => {
-    if (message.role === 'tool') {
-      return { role: 'tool', tool_call_id: message.toolCallId, content: message.content };
-    }
+    if (message.role === 'tool') return { role: 'tool', tool_call_id: message.toolCallId, content: message.content };
     if (message.role === 'assistant' && message.toolCalls?.length) {
       return {
         role: 'assistant',
@@ -174,29 +167,47 @@ function textContent(value: unknown): string {
   }).join('\n').trim();
 }
 
+function parseArguments(value: unknown): Record<string, unknown> {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value !== 'string' || !value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  } catch {
+    throw new AppError('provider_invalid_tool_arguments', 422, 'The provider returned invalid tool arguments.');
+  }
+  return {};
+}
+
 function toolCalls(value: unknown): LLMToolCall[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry): LLMToolCall[] => {
     const call = record(entry);
     const fn = record(call.function);
     if (typeof fn.name !== 'string' || !fn.name.trim()) return [];
-    let args: Record<string, unknown> = {};
-    if (typeof fn.arguments === 'string') {
-      try {
-        const decoded = JSON.parse(fn.arguments) as unknown;
-        if (decoded !== null && typeof decoded === 'object' && !Array.isArray(decoded)) args = decoded as Record<string, unknown>;
-      } catch {
-        throw new AppError('provider_invalid_tool_arguments', 422, 'The provider returned invalid tool arguments.');
-      }
-    } else if (fn.arguments !== null && typeof fn.arguments === 'object' && !Array.isArray(fn.arguments)) {
-      args = fn.arguments as Record<string, unknown>;
-    }
     return [{
-      id: typeof call.id === 'string' && call.id ? call.id : `tool-${crypto.randomUUID()}`,
+      id: typeof call.id === 'string' && call.id ? call.id : `tool-${randomUUID()}`,
       name: fn.name,
-      arguments: args
+      arguments: parseArguments(fn.arguments)
     }];
   });
+}
+
+function requestBody(input: ProviderChatInput, stream: boolean): Record<string, unknown> {
+  return {
+    model: input.config.model,
+    messages: openAiMessages(input.messages),
+    temperature: input.temperature ?? 0.3,
+    max_tokens: input.maxOutputTokens ?? 3000,
+    stream,
+    ...(input.tools?.length ? {
+      tools: input.tools.map((tool) => ({
+        type: 'function',
+        function: { name: tool.name, description: tool.description, parameters: tool.parameters }
+      })),
+      tool_choice: 'auto'
+    } : {})
+  };
 }
 
 export class OpenAiCompatibleAdapter implements ProviderAdapter {
@@ -206,7 +217,7 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
     return normalized(input);
   }
 
-  async discoverModels(input: ProviderRuntimeConfig, signal?: AbortSignal): Promise<ModelDiscoveryResult> {
+  async discoverModels(input: ProviderRuntimeConfig, signal?: AbortSignal | undefined): Promise<ModelDiscoveryResult> {
     const configValue = normalized(input);
     const urls = resolveProviderUrls(configValue.providerType, configValue.normalizedBaseUrl);
     const started = performance.now();
@@ -219,7 +230,7 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
           url: endpoint,
           method: 'GET',
           headers: headers(configValue),
-          signal,
+          ...(signal ? { signal } : {}),
           timeoutMs: config.providerDiscoveryTimeoutMs,
           allowPrivate: allowPrivate(configValue)
         });
@@ -255,21 +266,8 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
       url: urls.resolvedChatUrl,
       method: 'POST',
       headers: headers(configValue),
-      body: {
-        model: configValue.model,
-        messages: openAiMessages(input.messages),
-        temperature: input.temperature ?? 0.3,
-        max_tokens: input.maxOutputTokens ?? 3000,
-        stream: false,
-        ...(input.tools?.length ? {
-          tools: input.tools.map((tool) => ({
-            type: 'function',
-            function: { name: tool.name, description: tool.description, parameters: tool.parameters }
-          })),
-          tool_choice: 'auto'
-        } : {})
-      },
-      signal: input.signal,
+      body: requestBody({ ...input, config: configValue }, false),
+      ...(input.signal ? { signal: input.signal } : {}),
       allowPrivate: allowPrivate(configValue)
     });
     const parsed = chatResponseSchema.safeParse(response.payload);
@@ -293,31 +291,25 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
     const configValue = normalized(input.config);
     const urls = resolveProviderUrls(configValue.providerType, configValue.normalizedBaseUrl);
     if (!urls.resolvedChatUrl) throw new AppError('provider_endpoint_not_found', 422, 'No chat completion endpoint is configured.');
-    const response = await fetch(urls.resolvedChatUrl, {
+    const transport = await providerHttpStream({
+      url: urls.resolvedChatUrl,
       method: 'POST',
       headers: headers(configValue),
-      body: JSON.stringify({
-        model: configValue.model,
-        messages: openAiMessages(input.messages),
-        temperature: input.temperature ?? 0.3,
-        max_tokens: input.maxOutputTokens ?? 3000,
-        stream: true,
-        ...(input.tools?.length ? {
-          tools: input.tools.map((tool) => ({ type: 'function', function: { name: tool.name, description: tool.description, parameters: tool.parameters } })),
-          tool_choice: 'auto'
-        } : {})
-      }),
-      signal: input.signal,
-      redirect: 'error'
+      body: requestBody({ ...input, config: configValue }, true),
+      ...(input.signal ? { signal: input.signal } : {}),
+      allowPrivate: allowPrivate(configValue)
     });
-    if (!response.ok || !response.body) throw new AppError('provider_invalid_response', response.status || 502, `Provider stream returned HTTP ${response.status}.`);
-    const reader = response.body.getReader();
+    const reader = transport.response.body!.getReader();
     const decoder = new TextDecoder();
+    const calls = new Map<number, { id: string; name: string; argumentsText: string }>();
     let buffer = '';
+    let totalBytes = 0;
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > config.providerMaxResponseBytes) throw new AppError('provider_response_too_large', 413);
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() ?? '';
@@ -328,14 +320,48 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
           let payload: unknown;
           try { payload = JSON.parse(data) as unknown; } catch { continue; }
           const root = record(payload);
-          const choices = Array.isArray(root.choices) ? root.choices : [];
-          const delta = record(record(choices[0]).delta);
+          const choice = record(Array.isArray(root.choices) ? root.choices[0] : undefined);
+          const delta = record(choice.delta);
           if (typeof delta.content === 'string' && delta.content) yield { type: 'text_delta', text: delta.content };
+          if (Array.isArray(delta.tool_calls)) {
+            for (const raw of delta.tool_calls) {
+              const item = record(raw);
+              const index = typeof item.index === 'number' ? item.index : 0;
+              const fn = record(item.function);
+              const current = calls.get(index) ?? {
+                id: typeof item.id === 'string' && item.id ? item.id : `tool-${randomUUID()}`,
+                name: '',
+                argumentsText: ''
+              };
+              if (typeof item.id === 'string' && item.id) current.id = item.id;
+              if (typeof fn.name === 'string') current.name += fn.name;
+              if (typeof fn.arguments === 'string') current.argumentsText += fn.arguments;
+              calls.set(index, current);
+            }
+          }
+          const usage = record(root.usage);
+          if (Object.keys(usage).length > 0) {
+            yield {
+              type: 'usage',
+              ...(typeof usage.prompt_tokens === 'number' ? { inputTokens: usage.prompt_tokens } : {}),
+              ...(typeof usage.completion_tokens === 'number' ? { outputTokens: usage.completion_tokens } : {}),
+              ...(typeof usage.total_tokens === 'number' ? { totalTokens: usage.total_tokens } : {})
+            };
+          }
         }
       }
+      for (const call of [...calls.entries()].sort(([a], [b]) => a - b).map(([, value]) => value)) {
+        if (!call.name) continue;
+        yield { type: 'tool_call', call: { id: call.id, name: call.name, arguments: parseArguments(call.argumentsText) } };
+      }
+      yield {
+        type: 'done',
+        model: configValue.model,
+        ...(transport.upstreamRequestId ? { upstreamRequestId: transport.upstreamRequestId } : {})
+      };
     } finally {
       reader.releaseLock();
+      transport.dispose();
     }
-    yield { type: 'done', model: configValue.model };
   }
 }
