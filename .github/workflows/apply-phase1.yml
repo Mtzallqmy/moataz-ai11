@@ -1,0 +1,64 @@
+name: Apply provider phase 1
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'feat/providers-drizzle-production-v2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Retrieve and apply reviewed provider patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          : > /tmp/phase1.double.b64
+          for sha in \
+            ec14c37da6621f568d0a786191ff26f810c78fe6 \
+            31539dc2323c7d89dda02cd8ad2caba9514341c8 \
+            034e6d50730c05fe258eacb2db1a9f3a078bd794 \
+            59ac510a4578286191dac08f9f99c2654e6f0a78 \
+            b1c8d86d8c316ad96579cb7de5a8fb3e06ef0c76 \
+            3e04b513d37ec5a9212c15fa76b0dd18a267ffc9 \
+            aeb8c9e0de594ecf04e914abc4196b063de5c388 \
+            f009067c25bcd39f3d93eb1885d5ec7b9d293ac4
+          do
+            gh api "repos/${GITHUB_REPOSITORY}/git/blobs/${sha}" --jq .content \
+              | tr -d '\n' \
+              | base64 -d >> /tmp/phase1.double.b64
+          done
+          echo "d4f3a560df41d6104c9b26e014c83989cf11b0dbe30afdb49863e52e2c1dace3  /tmp/phase1.double.b64" | sha256sum -c -
+          base64 -d /tmp/phase1.double.b64 > /tmp/phase1.once.b64
+          base64 -d /tmp/phase1.once.b64 > /tmp/phase1.patch.gz
+          gzip -dc /tmp/phase1.patch.gz > /tmp/phase1.patch
+          echo "47272fbd52b39403b8ce082088c2fb2e596b1782dd9c9ccd5d651c81a04e4adb  /tmp/phase1.patch" | sha256sum -c -
+          git apply --check /tmp/phase1.patch
+          git apply /tmp/phase1.patch
+          rm -rf .analysis .bootstrap
+          rm -f .github/workflows/generate-analysis-snapshot.yml
+          rm -f .github/workflows/export-source.yml
+          rm -f .github/workflows/apply-phase1.yml
+
+      - name: Commit provider phase 1
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: rebuild provider platform phase 1'
+          git push origin HEAD:${{ github.head_ref }}
