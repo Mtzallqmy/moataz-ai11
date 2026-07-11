@@ -15,7 +15,9 @@ import { redactText } from './redaction.js';
 import { appVersion } from './version.js';
 import { upstreamAppError } from './upstream-errors.js';
 import { assertProviderCredentials, providerCatalog, resolveProviderBaseUrl } from './providers.js';
-import { providerErrorWithDiagnostic, successfulProviderDiagnostic } from './provider-diagnostics.js';
+import { providerErrorWithDiagnostic } from './provider-diagnostics.js';
+import { getProviderDefinition, normalizeProviderUrls } from './providers/index.js';
+import type { ProviderDiagnosticResult } from './providers/types.js';
 import { fetchWithValidatedRedirects, readLimitedText } from './network.js';
 import type { TelegramStatus } from './telegram.js';
 import { attachmentContext, attachmentsForChat, deletePendingAttachment, pendingAttachments, storeAttachment, summarizeAttachment, type AttachmentRow, type AttachmentSummary } from './attachments.js';
@@ -300,7 +302,7 @@ async function validateProvider(input: z.infer<typeof providerTestSchema>): Prom
   message: string;
   model: string;
   models: string[];
-  diagnostic: ReturnType<typeof successfulProviderDiagnostic>;
+  diagnostic: ProviderDiagnosticResult;
 }> {
   const provider = providerInput(input);
   const preferredModel = input.model ?? 'auto';
@@ -309,14 +311,7 @@ async function validateProvider(input: z.infer<typeof providerTestSchema>): Prom
     message: result.message,
     model: result.model,
     models: result.models,
-    diagnostic: successfulProviderDiagnostic({
-      providerType: input.type,
-      selectedModel: result.model,
-      preferredModel,
-      modelsSupported: result.modelsSupported,
-      modelCount: result.models.length,
-      attempts: result.attempts
-    })
+    diagnostic: result.diagnostic
   };
 }
 
@@ -644,6 +639,20 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
     res.json({ providers: providerCatalog });
   });
 
+  app.post('/api/providers/normalize-url', auth, (req: AuthRequest, res: Response, next: NextFunction): void => {
+    try {
+      const input = parseInput(z.object({
+        type: providerTypeSchema,
+        baseUrl: z.string().trim().min(1).max(2048)
+      }).strict(), req.body);
+      const definition = getProviderDefinition(input.type);
+      const urls = normalizeProviderUrls(definition, input.baseUrl);
+      res.json({ success: true, provider: definition.id, ...urls });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/providers', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const rows = await query(
@@ -768,16 +777,18 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
     }
   });
 
-  app.post('/api/providers/models', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  const discoverModelsHandler = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const input = parseInput(providerModelsSchema, req.body);
       const result = await listProviderModels(modelDiscoveryProvider({ type: input.type, apiKey: input.apiKey, baseUrl: input.baseUrl }));
-      const recommendedModel = result.models.find((model) => model.toLowerCase().includes(':free')) ?? result.models[0] ?? null;
-      res.json({ ...result, recommendedModel });
+      res.json({ success: true, ...result, recommendedModel: null });
     } catch (error) {
       next(error);
     }
-  });
+  };
+
+  app.post('/api/providers/discover-models', auth, discoverModelsHandler);
+  app.post('/api/providers/models', auth, discoverModelsHandler);
 
   app.get('/api/providers/:id/models', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
@@ -785,14 +796,13 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       const row = await providerRowForUser(req.user!.id, id);
       if (!row) throw new AppError('provider_not_found', 404);
       const result = await listProviderModels(providerFromRow(row));
-      const recommendedModel = result.models.find((model) => model.toLowerCase().includes(':free')) ?? result.models[0] ?? null;
-      res.json({ ...result, recommendedModel });
+      res.json({ success: true, ...result, recommendedModel: null });
     } catch (error) {
       next(error);
     }
   });
 
-  app.post('/api/providers/:id/test', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  const retestProviderHandler = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     const id = (() => {
       try { return routeId(req); } catch (error) { next(error); return undefined; }
     })();
@@ -829,7 +839,10 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       ).catch(() => undefined);
       next(providerErrorWithDiagnostic(providerType, error));
     }
-  });
+  };
+
+  app.post('/api/providers/:id/retest', auth, retestProviderHandler);
+  app.post('/api/providers/:id/test', auth, retestProviderHandler);
 
   app.get('/api/integrations', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
