@@ -1,0 +1,28 @@
+name: Apply phase 1 fixes
+
+on:
+  push:
+    branches: [feat/provider-registry-drizzle-v2]
+    paths:
+      - '.bootstrap/apply-phase1.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/provider-registry-drizzle-v2
+          fetch-depth: 0
+      - name: Apply transformations
+        run: python3 .bootstrap/phase1-fixes.py
+      - name: Commit changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add server/src
+          git commit -m 'fix: resolve provider adapter strict TypeScript diagnostics'
+          git push origin HEAD:feat/provider-registry-drizzle-v2
