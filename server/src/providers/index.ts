@@ -22,10 +22,10 @@ export function providerAdapterFor(providerType: string): ProviderAdapter {
 
 export function normalizeProviderConfig(input: {
   providerType: string;
-  apiKey?: string;
-  baseUrl?: string | null;
-  selectedModel?: string | null;
-  customHeaders?: Record<string, string>;
+  apiKey?: string | undefined;
+  baseUrl?: string | null | undefined;
+  selectedModel?: string | null | undefined;
+  customHeaders?: Record<string, string> | undefined;
 }): NormalizedProviderConfig {
   return providerAdapterFor(input.providerType).normalizeConfig({
     apiKey: input.apiKey,
