@@ -1,6 +1,6 @@
 import type { Express } from 'express';
 import { diagnoseProviderError } from './providers/diagnostics.js';
-import { chatRoutes, buildAgentMessages, parseLegacyToolCall } from './routes/chats.routes.js';
+import { chatRoutes } from './routes/chats.routes.js';
 import { integrationRoutes } from './routes/integrations.routes.js';
 import { providerRoutes } from './routes/providers.routes.js';
 import { systemRoutes, type RuntimeStatus } from './routes/system.routes.js';
