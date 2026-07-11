@@ -1,0 +1,31 @@
+name: Export phase dependencies
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  export-deps:
+    if: github.head_ref == 'feat/providers-drizzle-v2'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci --include=dev --no-audit --no-fund
+      - run: npm install --no-save --ignore-scripts drizzle-orm@0.44.5 drizzle-kit@0.31.4
+      - run: tar -czf "$RUNNER_TEMP/node-modules.tgz" node_modules
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phase-node-modules
+          path: ${{ runner.temp }}/node-modules.tgz
+          retention-days: 1
