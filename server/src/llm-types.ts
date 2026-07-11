@@ -13,18 +13,22 @@ export type LLMToolCall = {
 export type LLMImage = {
   mimeType: string;
   dataBase64: string;
-  name?: string;
+  name?: string | undefined;
 };
 
 export type Msg =
-  | { role: 'system' | 'user'; content: string; images?: readonly LLMImage[] }
-  | { role: 'assistant'; content: string; toolCalls?: readonly LLMToolCall[] }
+  | { role: 'system' | 'user'; content: string; images?: readonly LLMImage[] | undefined }
+  | { role: 'assistant'; content: string; toolCalls?: readonly LLMToolCall[] | undefined }
   | { role: 'tool'; content: string; toolCallId: string; name: string };
 
 export type AgentStep = {
   text: string;
   toolCalls: LLMToolCall[];
   model: string;
-  requestId?: string;
-  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  requestId?: string | undefined;
+  usage?: {
+    inputTokens?: number | undefined;
+    outputTokens?: number | undefined;
+    totalTokens?: number | undefined;
+  } | undefined;
 };
