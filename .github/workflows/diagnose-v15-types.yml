@@ -1,0 +1,35 @@
+name: Diagnose v1.5 types
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.head_ref == 'fix/provider-session-attachments-v1.5'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --include=dev --silent
+      - name: Capture typecheck diagnostics
+        shell: bash
+        run: |
+          mkdir -p reports
+          set +e
+          npm run typecheck > reports/v15-types.txt 2>&1
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v15-type-diagnostics
+          path: reports/v15-types.txt
+          if-no-files-found: error
+          retention-days: 1
