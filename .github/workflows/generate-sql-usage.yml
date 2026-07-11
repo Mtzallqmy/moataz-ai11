@@ -1,0 +1,41 @@
+name: Generate SQL usage audit
+
+on:
+  push:
+    branches: [feat/provider-registry-drizzle-v2]
+    paths:
+      - '.audit/sql-trigger.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/provider-registry-drizzle-v2
+          fetch-depth: 0
+      - name: Capture database and provider usage
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo '# DB imports'
+            grep -RIn "from './db\.js'\|from \"./db\.js\"" server/src client/src || true
+            echo
+            echo '# SQL statements and helper calls'
+            grep -RInE "SELECT |INSERT INTO|UPDATE |DELETE FROM|CREATE TABLE|ALTER TABLE|query<|get<|run\(|transaction\(" server/src --include='*.ts' || true
+            echo
+            echo '# Provider imports and calls'
+            grep -RInE "providers\.js|llm\.js|diagnoseProvider|listProviderModels|testProvider|completeAgentStep|normalizeBaseUrl" server/src client/src --include='*.ts' --include='*.tsx' || true
+          } > .audit/sql-usage.txt
+      - name: Commit audit
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .audit/sql-usage.txt
+          git commit -m 'chore: capture SQL and provider usage audit'
+          git push origin HEAD:feat/provider-registry-drizzle-v2
