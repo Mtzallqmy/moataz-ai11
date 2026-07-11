@@ -1,0 +1,467 @@
+# File tree
+./.audit/phase12-inventory.txt
+./.dockerignore
+./.env.example
+./.github/workflows/ci.yml
+./.github/workflows/phase12-audit.yml
+./.gitignore
+./.npmrc
+./CHANGELOG.md
+./DEPLOYMENT.md
+./Dockerfile
+./README.md
+./client/index.html
+./client/src/auth/AuthContext.tsx
+./client/src/chat/message-state.test.ts
+./client/src/chat/message-state.ts
+./client/src/components/ui.tsx
+./client/src/lib/api.ts
+./client/src/lib/errors.ts
+./client/src/lib/i18n.ts
+./client/src/main.tsx
+./client/src/pages/ChatPage.tsx
+./client/src/pages/HomePage.tsx
+./client/src/pages/IntegrationsPage.tsx
+./client/src/pages/ProvidersPage.tsx
+./client/src/pages/SettingsPage.tsx
+./client/src/pages/TerminalPage.tsx
+./client/src/styles/app.css
+./client/src/types.ts
+./client/tsconfig.json
+./client/vite.config.ts
+./data/.gitkeep
+./docs/EXTERNAL_SANDBOX.md
+./docs/V1.5_ARCHITECTURE.md
+./docs/providers-integrations-ar.md
+./docs/terminal-protocol.md
+./eslint.config.js
+./package-lock.json
+./package.json
+./railway.json
+./reports/phase-0-1-report-ar.md
+./sandbox-service/Dockerfile
+./sandbox-service/README.md
+./sandbox-service/server.mjs
+./scripts/ensure-runtime-dirs.mjs
+./server/src/app.integration.test.ts
+./server/src/app.test.ts
+./server/src/app.ts
+./server/src/attachments.test.ts
+./server/src/attachments.ts
+./server/src/auth.test.ts
+./server/src/auth.ts
+./server/src/config.test.ts
+./server/src/config.ts
+./server/src/crypto.ts
+./server/src/db-cli.ts
+./server/src/db.ts
+./server/src/errors.ts
+./server/src/index.ts
+./server/src/llm.ts
+./server/src/logger.ts
+./server/src/multi-agent.ts
+./server/src/network.test.ts
+./server/src/network.ts
+./server/src/provider-diagnostics.test.ts
+./server/src/provider-diagnostics.ts
+./server/src/providers.test.ts
+./server/src/providers.ts
+./server/src/redaction.test.ts
+./server/src/redaction.ts
+./server/src/routes.test.ts
+./server/src/routes.ts
+./server/src/telegram.test.ts
+./server/src/telegram.ts
+./server/src/terminal.ts
+./server/src/tool-calls.test.ts
+./server/src/tool-calls.ts
+./server/src/tools.test.ts
+./server/src/tools.ts
+./server/src/upstream-errors.test.ts
+./server/src/upstream-errors.ts
+./server/src/validation.ts
+./server/src/version.ts
+./server/src/ws-tickets.ts
+./server/test/integration-setup.ts
+./server/test/unit-setup.ts
+./server/tsconfig.json
+./vitest.config.ts
+./vitest.integration.config.ts
+./workspace/.gitkeep
+
+# Database imports and SQL sites
+server/src/tools.ts:357:      return { url: response.url, status: response.status, contentType: response.headers.get('content-type'), response: payload };
+server/src/tools.ts:368:      const contentType = response.headers.get('content-type') ?? '';
+server/src/tools.ts:409:        const response = await new Octokit({ auth: integration.token }).repos.get({ owner, repo });
+server/src/tools.ts:470:  const definition = toolRegistry.get(name);
+server/src/auth.ts:8:import { cryptoId, get, query, run, sha256, transaction, type DbRow } from './db.js';
+server/src/auth.ts:180:  await run(
+server/src/auth.ts:212:      await run('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
+server/src/auth.ts:234:      await transaction([
+server/src/auth.ts:251:      if (raw) await run('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = ? AND revoked_at IS NULL', [sha256(raw)]);
+server/src/auth.ts:257:  app.get('/api/auth/me', auth, (req: AuthRequest, res: Response): void => {
+server/src/auth.ts:262:  app.get('/api/auth/sessions', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/auth.ts:286:      await run(
+server/src/auth.ts:300:      await run('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [id, req.user!.id]);
+server/src/auth.ts:314:      await run(
+server/src/telegram.ts:2:import { get, query, run } from './db.js';
+server/src/telegram.ts:151:  await run('UPDATE integrations SET meta = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [JSON.stringify(meta), row.id, row.user_id]);
+server/src/telegram.ts:174:  const existing = sessions.get(key);
+server/src/telegram.ts:191:  await run('UPDATE integrations SET meta = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [JSON.stringify(next), row.id, row.user_id]);
+server/src/telegram.ts:799:      if (now - (lastMessageAt.get(chatId) ?? 0) < 750) return;
+server/src/providers.ts:42:  return catalog.get(normalized) ?? {
+server/src/attachments.ts:5:import { type DbRow, query, run } from './db.js';
+server/src/attachments.ts:115:    await run(
+server/src/attachments.ts:160:    await run(
+server/src/attachments.ts:178:  await run('DELETE FROM attachments WHERE id = ? AND chat_id = ? AND user_id = ? AND message_id IS NULL', [id, chatId, userId]);
+server/src/db-cli.ts:1:import { close, getMigrationStatus, migrate, ping } from './db.js';
+server/src/ws-tickets.ts:3:import { cryptoId, get, query, run, sha256 } from './db.js';
+server/src/ws-tickets.ts:19:  await run(
+server/src/ws-tickets.ts:43:  await run('DELETE FROM websocket_tickets WHERE expires_at <= CURRENT_TIMESTAMP OR used_at IS NOT NULL');
+server/src/network.ts:80:        const location = response.headers.get('location');
+server/src/terminal.ts:100:      const ticket = url.searchParams.get('ticket');
+server/src/terminal.ts:110:      const current = connectionsByUser.get(user.id) ?? 0;
+server/src/terminal.ts:189:      const count = connectionsByUser.get(ws.userId) ?? 1;
+server/src/db.ts:56:  const result: QueryResult<T> = await client.query(transform(sql), [...params]);
+server/src/db.ts:70:  return sqliteDb!.prepare(sql).get(...params) as T | undefined;
+server/src/db.ts:73:export async function run(sql: string, params: SqlParams = []): Promise<unknown> {
+server/src/db.ts:74:  if (isPostgres) return pgPool!.query(transform(sql), [...params]);
+server/src/db.ts:75:  return sqliteDb!.prepare(sql).run(...params);
+server/src/db.ts:78:export async function transaction(operations: readonly SqlOperation[]): Promise<void> {
+server/src/db.ts:82:      await client.query('BEGIN');
+server/src/db.ts:84:        await client.query(transform(operation.sql), [...(operation.params ?? [])]);
+server/src/db.ts:86:      await client.query('COMMIT');
+server/src/db.ts:88:      await client.query('ROLLBACK');
+server/src/db.ts:96:  const execute = sqliteDb!.transaction((ops: readonly SqlOperation[]) => {
+server/src/db.ts:98:      sqliteDb!.prepare(operation.sql).run(...(operation.params ?? []));
+server/src/db.ts:106:    await run(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+server/src/db.ts:258:  for (const statement of baseStatements) await run(statement);
+server/src/db.ts:278:  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.2.0', 'phase1-1.2.0']);
+server/src/db.ts:279:  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.3.0', 'phase1-1.3.0']);
+server/src/db.ts:280:  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.5.0', 'phase1-1.5.0']);
+server/src/db.ts:286:    await run(
+server/src/db.ts:304:    await get('SELECT 1 AS ok');
+server/src/app.test.ts:8:    expect(app.get('trust proxy')).toBe(1);
+server/src/app.test.ts:11:      .get('/api/unknown')
+server/src/app.test.ts:22:      .get('/api/health')
+server/src/app.ts:37:  if (config.isRailway && (app.get('trust proxy') === false || app.get('trust proxy') === 0)) {
+server/src/app.ts:156:  app.get('*', (req, res, next) => {
+server/src/app.integration.test.ts:6:import { close, cryptoId, migrate, run } from './db.js';
+server/src/app.integration.test.ts:26:    await request(app).get('/api/health').expect(200, { ok: true, status: 'alive' });
+server/src/app.integration.test.ts:27:    const ready = await request(app).get('/api/ready').expect(200);
+server/src/app.integration.test.ts:42:    const response = await request(app).get('/api/auth/me').set('Authorization', `Bearer ${adminToken}`).expect(200);
+server/src/app.integration.test.ts:58:    await run('INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, ?)', [id, 'inactive@example.com', hash, 'Inactive', 'user', 0]);
+server/src/app.integration.test.ts:60:    await request(app).get('/api/auth/me').set('Authorization', `Bearer ${token}`).expect(401, { error: 'unauthorized' });
+server/src/app.integration.test.ts:66:    await run('INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, ?)', [id, 'user@example.com', hash, 'User', 'user', 1]);
+server/src/app.integration.test.ts:79:    await run('UPDATE websocket_tickets SET expires_at = ? WHERE token_hash = ?', [new Date(0).toISOString(), crypto.createHash('sha256').update(expired.ticket).digest('hex')]);
+server/src/app.integration.test.ts:85:    const response = await request(app).get('/api/provider-catalog').set('Authorization', `Bearer ${adminToken}`).expect(200);
+server/src/app.integration.test.ts:107:    const listed = await request(app).get('/api/providers').set('Authorization', `Bearer ${adminToken}`).expect(200);
+server/src/app.integration.test.ts:147:    await run('INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, ?)', [otherUserId, 'other@example.com', hash, 'Other', 'user', 1]);
+server/src/app.integration.test.ts:149:    await run('INSERT INTO providers (id, user_id, name, type, api_key_enc, default_model) VALUES (?, ?, ?, ?, ?, ?)', [providerId, otherUserId, 'Other provider', 'openai', encrypt('test-key'), 'test-model']);
+server/src/app.integration.test.ts:154:    await run('INSERT INTO chats (id, user_id, title, mode) VALUES (?, ?, ?, ?)', [chatId, otherUserId, 'Private', 'chat']);
+server/src/app.integration.test.ts:155:    await request(app).get(`/api/chats/${chatId}/messages`).set('Authorization', `Bearer ${adminToken}`).expect(404);
+server/src/app.integration.test.ts:174:    const response = await request(app).get('/api/does-not-exist').set('Accept', 'text/html').expect(404);
+server/src/routes.ts:3:import { query, get, run, cryptoId, transaction, ping, getMigrationStatus, type DbRow } from './db.js';
+server/src/routes.ts:248:  await run('UPDATE chats SET provider_id = ?, model = COALESCE(model, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [selected.id, selected.default_model, chat.id, userId]);
+server/src/routes.ts:539:    await transaction([
+server/src/routes.ts:572:    const current = grouped.get(row.message_id) ?? [];
+server/src/routes.ts:586:  app.get('/api/health', (_req, res) => {
+server/src/routes.ts:590:  app.get('/api/ready', async (_req, res, next): Promise<void> => {
+server/src/routes.ts:601:  app.get('/api/system/status', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:641:  app.get('/api/tools', auth, (_req, res) => res.json({ tools: toolCatalog }));
+server/src/routes.ts:643:  app.get('/api/provider-catalog', auth, (_req, res) => {
+server/src/routes.ts:647:  app.get('/api/providers', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:649:      const rows = await query(
+server/src/routes.ts:669:      await run(
+server/src/routes.ts:709:      await run(
+server/src/routes.ts:728:      await transaction([
+server/src/routes.ts:782:  app.get('/api/providers/:id/models', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:811:      await transaction([
+server/src/routes.ts:825:      await run(
+server/src/routes.ts:834:  app.get('/api/integrations', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:864:      await run(
+server/src/routes.ts:898:      await run(
+server/src/routes.ts:926:      await run(
+server/src/routes.ts:937:      await run(
+server/src/routes.ts:950:      const existing = await get('SELECT id FROM integrations WHERE id = ? AND user_id = ? AND is_active = 1', [id, req.user!.id]);
+server/src/routes.ts:952:      await run('UPDATE integrations SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [id, req.user!.id]);
+server/src/routes.ts:960:  app.get('/api/chats', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:962:      const chats = await query(
+server/src/routes.ts:987:      await run(
+server/src/routes.ts:1012:      await run(
+server/src/routes.ts:1026:      const existing = await get('SELECT id FROM chats WHERE id = ? AND user_id = ?', [id, req.user!.id]);
+server/src/routes.ts:1028:      await run('DELETE FROM chats WHERE id = ? AND user_id = ?', [id, req.user!.id]);
+server/src/routes.ts:1043:        const chat = await get('SELECT id FROM chats WHERE id = ? AND user_id = ?', [chatId, req.user!.id]);
+server/src/routes.ts:1072:  app.get('/api/chats/:id/messages', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:1075:      const chat = await get('SELECT id FROM chats WHERE id = ? AND user_id = ?', [id, req.user!.id]);
+server/src/routes.ts:1085:      res.json({ messages: messages.map((message) => normalizedMessage(message, grouped.get(message.id) ?? [])) });
+server/src/routes.ts:1115:        res.json({ message: normalizedMessage(existingAssistant, grouped.get(existingAssistant.id) ?? []), idempotencyKey: key, replayed: true });
+server/src/routes.ts:1118:      const existingUser = await get('SELECT id FROM messages WHERE chat_id = ? AND idempotency_key = ? AND role = ?', [chatId, key, 'user']);
+server/src/routes.ts:1124:      const running = await get('SELECT id FROM agent_runs WHERE chat_id = ? AND status = ?', [chatId, 'running']);
+server/src/routes.ts:1137:      await transaction([
+server/src/routes.ts:1258:      await transaction([
+server/src/routes.ts:1283:      await transaction([
+server/src/routes.ts:1295:      await run('UPDATE agent_runs SET status = ?, error_code = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?', ['failed', errorCode(error), runId]).catch(() => undefined);
+
+# Provider and LLM files
+server/src/attachments.test.ts:29:    expect(summarizeAttachment(row('main.ts', 'application/octet-stream')).kind).toBe('text');
+server/src/llm.ts:7:import { assertProviderCredentials, providerAdapter, providerDefinition } from './providers.js';
+server/src/llm.ts:8:import { upstreamAppError } from './upstream-errors.js';
+server/src/llm.ts:63:  const mapped = upstreamAppError('provider', provider.type, error);
+server/src/llm.ts:276:export async function completeAgentStep(
+server/src/llm.ts:339:  const step = await completeAgentStep(provider, messages, model, [], externalSignal);
+server/src/llm.ts:361:export async function listProviderModels(provider: Provider): Promise<{ supported: boolean; models: string[] }> {
+server/src/llm.ts:363:    return { supported: false, models: [...providerDefinition(provider.type).modelExamples] };
+server/src/llm.ts:373:    const upstreamStatus = typeof details.upstreamStatus === 'number' ? details.upstreamStatus : undefined;
+server/src/llm.ts:374:    if (upstreamStatus === 404 || upstreamStatus === 405 || mapped.code === 'provider_model_not_found') {
+server/src/llm.ts:375:      return { supported: false, models: [...providerDefinition(provider.type).modelExamples] };
+server/src/llm.ts:416:export async function diagnoseProviderConnection(provider: Provider, preferredModel?: string): Promise<ProviderProbeResult> {
+server/src/llm.ts:417:  const discovery = await listProviderModels(provider);
+server/src/llm.ts:419:  const examples = [...providerDefinition(provider.type).modelExamples].filter((model) => isConcreteModel(model));
+server/src/providers.test.ts:2:import { assertProviderCredentials, normalizeBaseUrl, providerDefinition, resolveProviderBaseUrl } from './providers.js';
+server/src/providers.test.ts:6:    expect(resolveProviderBaseUrl('openai', undefined)).toBe('https://api.openai.com/v1');
+server/src/providers.test.ts:7:    expect(resolveProviderBaseUrl('nvidia', undefined)).toBe('https://integrate.api.nvidia.com/v1');
+server/src/providers.test.ts:8:    expect(resolveProviderBaseUrl('huggingface', undefined)).toBe('https://router.huggingface.co/v1');
+server/src/providers.test.ts:9:    expect(resolveProviderBaseUrl('groq', undefined)).toBe('https://api.groq.com/openai/v1');
+server/src/providers.test.ts:13:    const definition = providerDefinition('my_gateway');
+server/src/providers.test.ts:16:    expect(resolveProviderBaseUrl('my_gateway', 'https://llm.example.com/v1/')).toBe('https://llm.example.com/v1');
+server/src/providers.test.ts:20:    expect(normalizeBaseUrl('openrouter.ai/api/v1/chat/completions')).toBe('https://openrouter.ai/api/v1');
+server/src/providers.test.ts:21:    expect(resolveProviderBaseUrl('openrouter', 'https://openrouter.ai')).toBe('https://openrouter.ai/api/v1');
+server/src/providers.test.ts:22:    expect(resolveProviderBaseUrl('custom', 'https://llm.example.com/v1/models')).toBe('https://llm.example.com/v1');
+server/src/providers.test.ts:26:    expect(() => normalizeBaseUrl('file:///tmp/model')).toThrow(/HTTP/i);
+server/src/providers.test.ts:27:    expect(() => normalizeBaseUrl('https://user:pass@example.com/v1')).toThrow(/Credentials/i);
+server/src/tools.ts:11:import { upstreamAppError } from './upstream-errors.js';
+server/src/tools.ts:229:    throw new AppError('integration_invalid_response', 502, `${service} returned invalid JSON.`, { upstreamStatus: status });
+server/src/tools.ts:332:      if (!response.ok) throw new AppError('sandbox_execution_failed', 502, 'The sandbox execution failed.', { upstreamStatus: response.status, response: payload });
+server/src/tools.ts:356:      if (!response.ok) throw new AppError('http_request_failed', 502, 'The API returned an error.', { upstreamStatus: response.status, response: payload });
+server/src/tools.ts:370:      if (!response.ok) throw new AppError('web_fetch_failed', 502, 'The page returned an error.', { upstreamStatus: response.status, url: response.url });
+server/src/tools.ts:389:        if (!response.ok) throw new AppError('web_search_failed', 502, 'Brave Search returned an error.', { upstreamStatus: response.status });
+server/src/tools.ts:398:      if (!response.ok) throw new AppError('web_search_failed', 502, 'Tavily returned an error.', { upstreamStatus: response.status });
+server/src/tools.ts:412:        throw upstreamAppError('integration', 'github', error);
+server/src/tools.ts:426:        throw upstreamAppError('integration', 'github', error);
+server/src/tools.ts:443:        throw upstreamAppError('integration', 'telegram', error);
+server/src/telegram.ts:5:  completeAgentStep,
+server/src/telegram.ts:6:  listProviderModels,
+server/src/telegram.ts:401:      const models = await listProviderModels(provider);
+server/src/telegram.ts:488:  let step = await completeAgentStep(provider, messages, providerRow.default_model, availableTools);
+server/src/telegram.ts:524:    step = await completeAgentStep(provider, messages, providerRow.default_model, availableTools);
+server/src/providers.ts:38:export const providerCatalog: readonly ProviderCatalogEntry[] = entries;
+server/src/providers.ts:40:export function providerDefinition(type: string): ProviderCatalogEntry {
+server/src/providers.ts:54:  return providerDefinition(type).adapter;
+server/src/providers.ts:80:export function normalizeBaseUrl(value: string | undefined | null): string | undefined {
+server/src/providers.ts:106:export function resolveProviderBaseUrl(type: string, supplied: string | undefined | null): string | undefined {
+server/src/providers.ts:111:  const suppliedUrl = normalizeBaseUrl(supplied);
+server/src/providers.ts:113:    const definition = providerDefinition(normalizedType);
+server/src/providers.ts:124:  return normalizeBaseUrl(providerDefinition(normalizedType).defaultBaseUrl);
+server/src/providers.ts:128:  const definition = providerDefinition(type);
+server/src/provider-diagnostics.ts:2:import { classifyUpstreamError, type UpstreamStage } from './upstream-errors.js';
+server/src/provider-diagnostics.ts:22:  errorStage?: UpstreamStage;
+server/src/provider-diagnostics.ts:37:function stageFrom(error: unknown): { stage: UpstreamStage; retryable: boolean } {
+server/src/provider-diagnostics.ts:45:      return { stage: stage as UpstreamStage, retryable: details.retryable === true };
+server/src/provider-diagnostics.ts:48:  const classified = classifyUpstreamError(error);
+server/src/provider-diagnostics.ts:124:  const noteByStage: Record<UpstreamStage, string> = {
+server/src/provider-diagnostics.ts:163:  const classified = classifyUpstreamError(error);
+server/src/provider-diagnostics.ts:168:    ...(classified.upstreamStatus !== undefined ? { upstreamStatus: classified.upstreamStatus } : {}),
+server/src/attachments.ts:105:  const mimeType = input.mimeType.split(';')[0]!.trim().toLowerCase() || 'application/octet-stream';
+server/src/provider-diagnostics.test.ts:38:  it('attaches diagnostics without losing upstream details', () => {
+server/src/logger.ts:15:  const stream = level === 'error' || level === 'warn' ? process.stderr : process.stdout;
+server/src/logger.ts:16:  stream.write(`${payload}\n`);
+server/src/terminal.ts:50:function rejectUpgrade(request: IncomingMessage, socket: import('node:stream').Duplex, status: number, code: string): void {
+server/src/terminal.ts:88:  const upgradeHandler = (request: IncomingMessage, socket: import('node:stream').Duplex, head: Buffer): void => {
+server/src/terminal.ts:154:    child.stdout.on('data', (data: Buffer) => sendJson(ws, { type: 'output', stream: 'stdout', data: data.toString('utf8') }));
+server/src/terminal.ts:155:    child.stderr.on('data', (data: Buffer) => sendJson(ws, { type: 'output', stream: 'stderr', data: data.toString('utf8') }));
+server/src/upstream-errors.test.ts:2:import { classifyUpstreamError, upstreamAppError } from './upstream-errors.js';
+server/src/upstream-errors.test.ts:4:describe('upstream error classification', () => {
+server/src/upstream-errors.test.ts:6:    const result = classifyUpstreamError({ status: 402, message: 'This request requires more credits.' });
+server/src/upstream-errors.test.ts:7:    expect(result).toMatchObject({ stage: 'billing', status: 402, retryable: false, upstreamStatus: 402 });
+server/src/upstream-errors.test.ts:11:    const auth = classifyUpstreamError({ status: 401, message: 'Invalid API key' });
+server/src/upstream-errors.test.ts:12:    expect(auth).toMatchObject({ stage: 'authentication', status: 422, retryable: false, upstreamStatus: 401 });
+server/src/upstream-errors.test.ts:13:    expect(classifyUpstreamError({ status: 429, message: 'Too many requests' })).toMatchObject({ stage: 'rate_limit', status: 429, retryable: true });
+server/src/upstream-errors.test.ts:17:    expect(classifyUpstreamError(new Error('Invalid URL')).stage).toBe('invalid_request');
+server/src/upstream-errors.test.ts:18:    expect(classifyUpstreamError(new Error('Only absolute URLs are supported')).stage).toBe('invalid_request');
+server/src/upstream-errors.test.ts:22:    const error = upstreamAppError('provider', 'openrouter', { status: 404, message: 'Model not found' });
+server/src/upstream-errors.test.ts:29:    const mapped = classifyUpstreamError({ response: { body: { ok: false, error_code: 401, description: 'Unauthorized' } } });
+server/src/upstream-errors.test.ts:31:    expect(mapped.upstreamStatus).toBe(401);
+server/src/upstream-errors.ts:4:export type UpstreamDomain = 'provider' | 'integration';
+server/src/upstream-errors.ts:5:export type UpstreamStage =
+server/src/upstream-errors.ts:17:export type UpstreamErrorDetails = {
+server/src/upstream-errors.ts:18:  domain: UpstreamDomain;
+server/src/upstream-errors.ts:20:  stage: UpstreamStage;
+server/src/upstream-errors.ts:21:  upstreamStatus?: number;
+server/src/upstream-errors.ts:26:type ClassifiedUpstreamError = {
+server/src/upstream-errors.ts:27:  stage: UpstreamStage;
+server/src/upstream-errors.ts:29:  upstreamStatus?: number;
+server/src/upstream-errors.ts:54:function upstreamMessage(error: unknown): string {
+server/src/upstream-errors.ts:75:  return 'Upstream service request failed.';
+server/src/upstream-errors.ts:79:  stage: UpstreamStage,
+server/src/upstream-errors.ts:83:  upstreamStatus: number | undefined
+server/src/upstream-errors.ts:84:): ClassifiedUpstreamError {
+server/src/upstream-errors.ts:90:    ...(upstreamStatus !== undefined ? { upstreamStatus } : {})
+server/src/upstream-errors.ts:94:export function classifyUpstreamError(error: unknown): ClassifiedUpstreamError {
+server/src/upstream-errors.ts:95:  const upstreamStatus = numericStatus(error);
+server/src/upstream-errors.ts:96:  const message = upstreamMessage(error);
+server/src/upstream-errors.ts:100:    return classified('timeout', 504, true, message, upstreamStatus);
+server/src/upstream-errors.ts:102:  if (upstreamStatus === 401 || /unauthorized|invalid (api )?key|incorrect (api )?key|invalid token|token is invalid|api key not valid/.test(normalized)) {
+server/src/upstream-errors.ts:103:    return classified('authentication', 422, false, message, upstreamStatus);
+server/src/upstream-errors.ts:105:  if (upstreamStatus === 402 || /payment required|insufficient credits?|not enough credits?|requires? more credits?|billing|quota exceeded|credit balance/.test(normalized)) {
+server/src/upstream-errors.ts:106:    return classified('billing', 402, false, message, upstreamStatus);
+server/src/upstream-errors.ts:108:  if (upstreamStatus === 403 || /forbidden|permission denied|insufficient scope|not allowed|access denied/.test(normalized)) {
+server/src/upstream-errors.ts:109:    return classified('authorization', 422, false, message, upstreamStatus);
+server/src/upstream-errors.ts:111:  if (upstreamStatus === 404 || /model.*not found|unknown model|no such model|does not exist|invalid model/.test(normalized)) {
+server/src/upstream-errors.ts:112:    return classified('model_not_found', 422, false, message, upstreamStatus);
+server/src/upstream-errors.ts:114:  if (upstreamStatus === 429 || /rate limit|too many requests|requests per minute|tokens per minute|capacity/.test(normalized)) {
+server/src/upstream-errors.ts:115:    return classified('rate_limit', 429, true, message, upstreamStatus);
+server/src/upstream-errors.ts:118:    upstreamStatus === 400
+server/src/upstream-errors.ts:119:    || upstreamStatus === 409
+server/src/upstream-errors.ts:120:    || upstreamStatus === 415
+server/src/upstream-errors.ts:121:    || upstreamStatus === 422
+server/src/upstream-errors.ts:124:    return classified('invalid_request', 422, false, message, upstreamStatus);
+server/src/upstream-errors.ts:126:  if (upstreamStatus !== undefined && upstreamStatus >= 500) {
+server/src/upstream-errors.ts:127:    return classified('service_unavailable', 502, true, message, upstreamStatus);
+server/src/upstream-errors.ts:130:    return classified('network', 503, true, message, upstreamStatus);
+server/src/upstream-errors.ts:132:  return classified('unknown', 502, false, message, upstreamStatus);
+server/src/upstream-errors.ts:135:export function upstreamAppError(
+server/src/upstream-errors.ts:136:  domain: UpstreamDomain,
+server/src/upstream-errors.ts:141:  const mapped = classifyUpstreamError(error);
+server/src/upstream-errors.ts:142:  const details: UpstreamErrorDetails = {
+server/src/upstream-errors.ts:146:    ...(mapped.upstreamStatus !== undefined ? { upstreamStatus: mapped.upstreamStatus } : {}),
+server/src/app.integration.test.ts:93:  it('saves provider configuration without forcing a paid upstream request', async () => {
+server/src/app.integration.test.ts:113:  it('saves integrations without an upstream call and marks them untested', async () => {
+server/src/routes.ts:5:import { completeAgentStep, diagnoseProviderConnection, listProviderModels, LLMError, type LLMToolSpec, type Msg, type Provider } from './llm.js';
+server/src/routes.ts:16:import { upstreamAppError } from './upstream-errors.js';
+server/src/routes.ts:17:import { assertProviderCredentials, providerCatalog, resolveProviderBaseUrl } from './providers.js';
+server/src/routes.ts:172:  const mapped = upstreamAppError('provider', 'provider', new Error(message));
+server/src/routes.ts:288:  const baseUrl = resolveProviderBaseUrl(input.type, typeof input.baseUrl === 'string' ? input.baseUrl : undefined);
+server/src/routes.ts:307:  const result = await diagnoseProviderConnection(provider, preferredModel);
+server/src/routes.ts:325:  const baseUrl = resolveProviderBaseUrl(input.type, typeof input.baseUrl === 'string' ? input.baseUrl : undefined);
+server/src/routes.ts:428:    throw new AppError('integration_invalid_response', 502, 'The integration returned an invalid response.', { upstreamStatus: response.status });
+server/src/routes.ts:484:    throw upstreamAppError('integration', type, error);
+server/src/routes.ts:534:    return await completeAgentStep(input.provider, input.messages, input.model, input.tools ?? []);
+server/src/routes.ts:537:    const probe = await diagnoseProviderConnection(input.provider, input.model ?? input.provider.defaultModel);
+server/src/routes.ts:550:    return completeAgentStep(input.provider, input.messages, probe.model, input.tools ?? []);
+server/src/routes.ts:644:    res.json({ providers: providerCatalog });
+server/src/routes.ts:665:      const resolvedBaseUrl = resolveProviderBaseUrl(input.type, typeof input.baseUrl === 'string' ? input.baseUrl : undefined);
+server/src/routes.ts:702:        ? resolveProviderBaseUrl(type, typeof input.baseUrl === 'string' ? input.baseUrl : undefined) ?? null
+server/src/routes.ts:704:          ? resolveProviderBaseUrl(type, undefined) ?? null
+server/src/routes.ts:774:      const result = await listProviderModels(modelDiscoveryProvider({ type: input.type, apiKey: input.apiKey, baseUrl: input.baseUrl }));
+server/src/routes.ts:787:      const result = await listProviderModels(providerFromRow(row));
+server/src/routes.ts:1051:          mimeType: req.header('Content-Type') ?? 'application/octet-stream',
+client/src/lib/errors.ts:11:  upstreamStatus?: number;
+client/src/pages/ChatPage.tsx:209:            'Content-Type': file.type || 'application/octet-stream',
+client/src/pages/TerminalPage.tsx:9:type TerminalEvent = { type: 'session_started'; userId: string } | { type: 'output'; stream: 'stdout' | 'stderr'; data: string } | { type: 'process_exit'; code: number | null; signal: string | null } | { type: 'error'; code: string };
+
+# Schema and migration references
+./README.md:52:- أدوات بناء native مثل `python3` و`make` و`g++` عند الحاجة إلى بناء `better-sqlite3` محليًا
+./README.md:102:DATABASE_URL=postgresql://USER:PASSWORD@HOST:6543/postgres
+./README.md:103:DATABASE_SSL_MODE=require
+./vitest.config.ts:11:      DATABASE_URL: 'file:./data/unit-test.db',
+./server/src/config.test.ts:9:  DATABASE_URL: 'postgresql://user:password@example.com:5432/app',
+./server/src/config.test.ts:68:      'DATABASE_URL',
+./server/src/config.test.ts:93:    const config = loadConfig({ ...railwayBase, DATABASE_URL: 'file:./data/moataz.db' });
+./server/src/db.ts:4:import Database from 'better-sqlite3';
+./server/src/db.ts:30:  pgPool = new Pool({
+./server/src/db.ts:106:    await run(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+./server/src/db.ts:115:  `CREATE TABLE IF NOT EXISTS schema_migrations (
+./server/src/db.ts:119:  `CREATE TABLE IF NOT EXISTS users (
+./server/src/db.ts:130:  `CREATE TABLE IF NOT EXISTS providers (
+./server/src/db.ts:146:  `CREATE TABLE IF NOT EXISTS chats (
+./server/src/db.ts:158:  `CREATE TABLE IF NOT EXISTS messages (
+./server/src/db.ts:170:  `CREATE TABLE IF NOT EXISTS attachments (
+./server/src/db.ts:185:  `CREATE TABLE IF NOT EXISTS integrations (
+./server/src/db.ts:200:  `CREATE TABLE IF NOT EXISTS agent_runs (
+./server/src/db.ts:213:  `CREATE TABLE IF NOT EXISTS workspaces (
+./server/src/db.ts:222:  `CREATE TABLE IF NOT EXISTS refresh_tokens (
+./server/src/db.ts:233:  `CREATE TABLE IF NOT EXISTS websocket_tickets (
+./server/src/db.ts:278:  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.2.0', 'phase1-1.2.0']);
+./server/src/db.ts:279:  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.3.0', 'phase1-1.3.0']);
+./server/src/db.ts:280:  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.5.0', 'phase1-1.5.0']);
+./server/src/db.ts:313:  const rows = await query<{ version: string }>('SELECT version FROM schema_migrations ORDER BY applied_at ASC');
+./server/src/config.ts:55:  DATABASE_URL: optionalTrimmedString,
+./server/src/config.ts:56:  DATABASE_SSL_MODE: z.enum(['disable', 'require', 'verify-full']).default('disable'),
+./server/src/config.ts:157:  const databaseUrl = env.DATABASE_URL ?? '';
+./server/src/config.ts:171:  if (databaseKind === 'unconfigured') addProblem(problems, 'DATABASE_URL', 'missing');
+./server/src/config.ts:172:  if (databaseKind === 'unsupported') addProblem(problems, 'DATABASE_URL', 'unsupported_scheme');
+./server/src/config.ts:230:    databaseSslMode: env.DATABASE_SSL_MODE,
+./.env.example:17:DATABASE_URL=
+./.env.example:18:DATABASE_SSL_MODE=
+./reports/phase-0-1-report-ar.md:41:  - `npm install`: exit `1` بسبب native build لـ`better-sqlite3` ومحاولة تنزيل Node 22 headers في بيئة محدودة الشبكة.
+./reports/phase-0-1-report-ar.md:51:- أضيفت الأنواع الصحيحة لـ`pg` و`better-sqlite3`.
+./reports/phase-0-1-report-ar.md:210:- `schema_migrations`
+./reports/phase-0-1-report-ar.md:344:- `DATABASE_URL`
+./reports/phase-0-1-report-ar.md:345:- `DATABASE_SSL_MODE=disable|require|verify-full`
+./reports/phase-0-1-report-ar.md:413:5. استخدم Supabase pooler URL في `DATABASE_URL` من backend فقط.
+./reports/phase-0-1-report-ar.md:414:6. اضبط `DATABASE_SSL_MODE=require` أو `verify-full` عند توفر CA صحيحة.
+./reports/phase-0-1-report-ar.md:428:مهم: لا ترسل Supabase service-role key إلى frontend. هذا المشروع يحتاج فقط server-side `DATABASE_URL` في هذه المرحلة.
+./DEPLOYMENT.md:23:DATABASE_URL=<Supabase/Railway PostgreSQL pooler URL>
+./DEPLOYMENT.md:24:DATABASE_SSL_MODE=require
+./DEPLOYMENT.md:41:Never expose a Supabase service-role key to the browser. This application connects through `DATABASE_URL` on the server.
+./DEPLOYMENT.md:52:DATABASE_URL=file:./data/moataz.db   # replace with PostgreSQL/Supabase
+./DEPLOYMENT.md:53:DATABASE_SSL_MODE=disable            # normally replace with require
+./DEPLOYMENT.md:61:For a long-running Railway service, use the Supabase pooler URL recommended for your deployment mode. Set `DATABASE_SSL_MODE=require` unless your certificate setup supports `verify-full`. The application never infers insecure TLS behavior from the hostname and never logs `DATABASE_URL`.
+./DEPLOYMENT.md:126:  -e DATABASE_URL='<postgresql URL>' \
+./DEPLOYMENT.md:127:  -e DATABASE_SSL_MODE=require \
+./vitest.integration.config.ts:15:      DATABASE_URL: 'file:./data/integration-test.db',
+./package.json:29:    "better-sqlite3": "^11.7.0",
+./package.json:47:    "@types/better-sqlite3": "^7.6.12",
+./.github/workflows/phase12-audit.yml:13:    if: github.head_ref == 'feat/providers-drizzle-phase12'
+./.github/workflows/phase12-audit.yml:37:            grep -RInE "CREATE TABLE|ALTER TABLE|schema_migrations|drizzle|better-sqlite3|new Pool|DATABASE_" . --exclude-dir=.git --exclude=package-lock.json || true
+
+# Route inventory
+server/src/auth.ts:217:  app.post('/api/auth/login', handleLogin);
+server/src/auth.ts:218:  app.post('/api/login', handleLogin);
+server/src/auth.ts:220:  app.post('/api/auth/refresh', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+server/src/auth.ts:248:  app.post('/api/auth/logout', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+server/src/auth.ts:257:  app.get('/api/auth/me', auth, (req: AuthRequest, res: Response): void => {
+server/src/auth.ts:262:  app.get('/api/auth/sessions', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/auth.ts:282:  app.delete('/api/auth/sessions/others', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/auth.ts:295:  app.delete('/api/auth/sessions/:id', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/auth.ts:308:  app.post('/api/auth/create-user', auth, requireAdmin, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/terminal.ts:71:  app.post('/api/auth/ws-ticket', auth, requireAdmin, async (req: AuthRequest, res, next): Promise<void> => {
+server/src/app.test.ts:8:    expect(app.get('trust proxy')).toBe(1);
+server/src/app.ts:37:  if (config.isRailway && (app.get('trust proxy') === false || app.get('trust proxy') === 0)) {
+server/src/app.ts:156:  app.get('*', (req, res, next) => {
+server/src/routes.ts:586:  app.get('/api/health', (_req, res) => {
+server/src/routes.ts:590:  app.get('/api/ready', async (_req, res, next): Promise<void> => {
+server/src/routes.ts:601:  app.get('/api/system/status', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:641:  app.get('/api/tools', auth, (_req, res) => res.json({ tools: toolCatalog }));
+server/src/routes.ts:643:  app.get('/api/provider-catalog', auth, (_req, res) => {
+server/src/routes.ts:647:  app.get('/api/providers', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:661:  app.post('/api/providers', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:692:  app.patch('/api/providers/:id', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:723:  app.delete('/api/providers/:id', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:746:  app.post('/api/providers/test', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:771:  app.post('/api/providers/models', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:782:  app.get('/api/providers/:id/models', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:795:  app.post('/api/providers/:id/test', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:834:  app.get('/api/integrations', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:848:  app.post('/api/integrations/test', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:858:  app.post('/api/integrations', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:885:  app.patch('/api/integrations/:id', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:911:  app.post('/api/integrations/:id/test', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:947:  app.delete('/api/integrations/:id', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:960:  app.get('/api/chats', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:977:  app.post('/api/chats', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:997:  app.patch('/api/chats/:id', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:1023:  app.delete('/api/chats/:id', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:1036:  app.post(
+server/src/routes.ts:1061:  app.delete('/api/chats/:id/attachments/:attachmentId', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:1072:  app.get('/api/chats/:id/messages', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:1091:  app.post('/api/chats/:id/messages', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:1303:  app.post('/api/tools/run' , auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+
+# Test files
+./client/src/chat/message-state.test.ts
+./server/src/app.integration.test.ts
+./server/src/app.test.ts
+./server/src/attachments.test.ts
+./server/src/auth.test.ts
+./server/src/config.test.ts
+./server/src/network.test.ts
+./server/src/provider-diagnostics.test.ts
+./server/src/providers.test.ts
+./server/src/redaction.test.ts
+./server/src/routes.test.ts
+./server/src/telegram.test.ts
+./server/src/tool-calls.test.ts
+./server/src/tools.test.ts
+./server/src/upstream-errors.test.ts
