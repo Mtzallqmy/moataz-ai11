@@ -6,6 +6,8 @@
 
 > **حالة المشروع:** الإصدار 1.3.0 يضيف منصة مزوّدات موسعة، تحققًا فعليًا، Tool Calling لمزوّدات OpenAI-compatible، أدوات ويب، اكتشاف محادثات Telegram، وSandbox خارجي. ما يزال Streaming والترحيل النهائي إلى Drizzle وحفظ نقاط استئناف الوكيل ضمن المراحل التالية.
 
+> **الإصدار 1.4.0:** أضيفت لوحة تحكم Telegram بأزرار وأوامر، اختيار المزوّد والوضع، فحص المفتاح والرصيد، أدوات الويب والملفات وGitHub، وتشخيص صريح للفوترة والأخطاء. Telegram control panel and provider diagnostics are now integrated with the same verified credentials used by the site.
+
 ## التقنيات المستخدمة
 
 | الجزء | التقنية |

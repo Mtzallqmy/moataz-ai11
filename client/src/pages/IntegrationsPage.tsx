@@ -211,7 +211,7 @@ export function IntegrationsPage({ request, t, language }: { request: Request; t
 
   return (
     <div className="page-stack">
-      <PageHeader eyebrow={t('settings')} title={t('integrations')} description={language === 'ar' ? 'GitHub وTelegram والبحث على الويب وSandbox خارجي، مع فحص فعلي وحفظ مشفّر.' : 'GitHub, Telegram, web search, and an external sandbox with real validation and encrypted storage.'} />
+      <PageHeader eyebrow={t('settings')} title={t('integrations')} description={language === 'ar' ? 'GitHub وTelegram والبحث وSandbox خارجي. بعد السماح بالمحادثة يعرض البوت /menu بأزرار للمزوّدات والتشخيص والملفات والويب والأدوات والحالة.' : 'GitHub, Telegram, web search, and an external sandbox with real validation and encrypted storage.'} />
       {notice && <Notice tone={notice.tone} onDismiss={() => setNotice(null)}><pre>{notice.text}</pre></Notice>}
       <section className="panel">
         <div className="section-heading"><div><h2>{editingId ? t('edit') : t('addIntegration')}</h2><p>{tokenHint}</p></div>{editingId && <button type="button" className="ghost" onClick={reset}>{t('cancel')}</button>}</div>
