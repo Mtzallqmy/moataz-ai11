@@ -56,7 +56,9 @@
 ./server/src/config.test.ts
 ./server/src/config.ts
 ./server/src/crypto.ts
+./server/src/database/bootstrap.ts
 ./server/src/database/client.ts
+./server/src/database/migrate.ts
 ./server/src/database/schema.ts
 ./server/src/db-cli.ts
 ./server/src/db.ts
@@ -472,6 +474,9 @@ client/src/pages/TerminalPage.tsx:9:type TerminalEvent = { type: 'session_starte
 ./server/src/db.ts:313:  const rows = await query<{ version: string }>('SELECT version FROM schema_migrations ORDER BY applied_at ASC');
 ./server/src/database/schema.ts:1:import { sql } from 'drizzle-orm';
 ./server/src/database/schema.ts:15:} from 'drizzle-orm/pg-core';
+./server/src/database/migrate.ts:2:import { migrate as runDrizzleMigrations } from 'drizzle-orm/node-postgres/migrator';
+./server/src/database/migrate.ts:10:  const migrationsFolder = path.resolve(process.cwd(), 'drizzle');
+./server/src/database/migrate.ts:27:      `SELECT hash, created_at::text FROM drizzle.__drizzle_migrations ORDER BY created_at ASC`
 ./server/src/database/client.ts:1:import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 ./server/src/database/client.ts:26:export const pool = new Pool({
 ./server/src/database/client.ts:41:export const database: NodePgDatabase<typeof schema> = drizzle(pool, { schema });
