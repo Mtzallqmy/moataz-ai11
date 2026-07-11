@@ -3,6 +3,7 @@
 .analysis/phase-plan.md
 .analysis/relevant-files.txt
 .analysis/tree.txt
+.bootstrap/phase1/part00
 .dockerignore
 .env.example
 .github/workflows/ci.yml
