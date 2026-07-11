@@ -1,0 +1,36 @@
+name: Phase 1-2 repository audit
+
+on:
+  push:
+    branches: [feat/provider-drizzle-phase12]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runtime and scripts
+        run: |
+          node --version
+          npm --version
+          echo '=== package.json ==='
+          cat package.json
+      - name: Repository tree
+        run: |
+          echo '=== FILE TREE ==='
+          find . -path './.git' -prune -o -type f -print | sort
+      - name: Relevant source map
+        shell: bash
+        run: |
+          echo '=== TYPESCRIPT FILE LINE COUNTS ==='
+          find server client tests -type f \( -name '*.ts' -o -name '*.tsx' -o -name '*.sql' \) -print0 2>/dev/null | xargs -0 -r wc -l | sort -n
+          echo '=== DATABASE REFERENCES ==='
+          grep -RInE "better-sqlite3|from 'pg'|from \"pg\"|SELECT |INSERT |UPDATE |DELETE |CREATE TABLE|BEGIN|COMMIT|ROLLBACK|query\(|run\(|get\(" server tests 2>/dev/null | head -2000 || true
+          echo '=== PROVIDER REFERENCES ==='
+          grep -RInE "provider|OpenAI|Anthropic|Gemini|models|chat/completions|responses|tool_calls|stream" server client tests 2>/dev/null | head -2000 || true
+          echo '=== ENV REFERENCES ==='
+          grep -RInE "DATABASE_|ALLOW_LOCAL|SSRF|JWT_|ENCRYPTION_|process\.env|envSchema" server .env.example Dockerfile railway.json 2>/dev/null | head -1200 || true
