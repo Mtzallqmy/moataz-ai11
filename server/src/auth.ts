@@ -5,9 +5,9 @@ import bcrypt from 'bcryptjs';
 import { parse as parseCookie, serialize as serializeCookie } from 'cookie';
 import { z } from 'zod';
 import { config } from './config.js';
-import { cryptoId, get, run, sha256, transaction } from './db.js';
+import { cryptoId, get, query, run, sha256, transaction, type DbRow } from './db.js';
 import { AppError } from './errors.js';
-import { parseInput } from './validation.js';
+import { parseInput, uuidSchema } from './validation.js';
 
 export type AuthUser = {
   id: string;
@@ -29,6 +29,15 @@ type UserRow = {
   name: string;
   role: string;
   is_active: number | boolean;
+};
+
+type SessionRow = DbRow & {
+  id: string;
+  token_hash: string;
+  expires_at: string;
+  created_at: string;
+  user_agent: string | null;
+  ip_hash: string | null;
 };
 
 type AccessTokenPayload = JwtPayload & {
@@ -88,17 +97,14 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
     || typeof decoded.email !== 'string'
     || (decoded.role !== 'admin' && decoded.role !== 'user')
     || decoded.type !== 'access'
-  ) {
-    throw new AppError('invalid_token', 401);
-  }
+  ) throw new AppError('invalid_token', 401);
   return decoded as AccessTokenPayload;
 }
 
 function bearerToken(req: Request): string | undefined {
   const header = req.headers.authorization;
   if (!header) return undefined;
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  return match?.[1];
+  return /^Bearer\s+(.+)$/i.exec(header)?.[1];
 }
 
 export async function auth(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
@@ -107,13 +113,9 @@ export async function auth(req: AuthRequest, res: Response, next: NextFunction):
     res.status(401).json({ error: 'unauthorized' });
     return;
   }
-
   try {
     const payload = verifyAccessToken(token);
-    const row = await get<UserRow>(
-      'SELECT id, email, password_hash, name, role, is_active FROM users WHERE id = ?',
-      [payload.sub]
-    );
+    const row = await get<UserRow>('SELECT id, email, password_hash, name, role, is_active FROM users WHERE id = ?', [payload.sub]);
     if (!row || !(row.is_active === true || row.is_active === 1)) {
       res.status(401).json({ error: 'unauthorized' });
       return;
@@ -153,8 +155,7 @@ function clearRefreshCookie(res: Response): void {
 }
 
 function readRefreshToken(req: Request): string | undefined {
-  const parsed = parseCookie(req.headers.cookie ?? '');
-  return parsed[REFRESH_COOKIE];
+  return parseCookie(req.headers.cookie ?? '')[REFRESH_COOKIE];
 }
 
 function createRefreshToken(): { id: string; raw: string; hash: string; expiresAt: string } {
@@ -210,9 +211,7 @@ export function authRoutes(app: Express): void {
       const user = toAuthUser(row);
       await run('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
       await issueSession(user, req, res);
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   };
 
   app.post('/api/auth/login', handleLogin);
@@ -225,21 +224,16 @@ export function authRoutes(app: Express): void {
       const hash = sha256(raw);
       const row = await get<UserRow & { refresh_id: string }>(
         `SELECT u.id, u.email, u.password_hash, u.name, u.role, u.is_active, r.id AS refresh_id
-         FROM refresh_tokens r
-         JOIN users u ON u.id = r.user_id
+         FROM refresh_tokens r JOIN users u ON u.id = r.user_id
          WHERE r.token_hash = ? AND r.revoked_at IS NULL AND r.expires_at > CURRENT_TIMESTAMP`,
         [hash]
       );
       if (!row || !(row.is_active === true || row.is_active === 1)) throw new AppError('unauthorized', 401);
-
       const nextToken = createRefreshToken();
       const fingerprint = requestFingerprint(req);
       await transaction([
         { sql: 'UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND revoked_at IS NULL', params: [row.refresh_id] },
-        {
-          sql: 'INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, user_agent, ip_hash) VALUES (?, ?, ?, ?, ?, ?)',
-          params: [nextToken.id, row.id, nextToken.hash, nextToken.expiresAt, fingerprint.userAgent, fingerprint.ipHash]
-        }
+        { sql: 'INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, user_agent, ip_hash) VALUES (?, ?, ?, ?, ?, ?)', params: [nextToken.id, row.id, nextToken.hash, nextToken.expiresAt, fingerprint.userAgent, fingerprint.ipHash] }
       ]);
       setRefreshCookie(res, nextToken.raw);
       const user = toAuthUser(row);
@@ -257,14 +251,58 @@ export function authRoutes(app: Express): void {
       if (raw) await run('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = ? AND revoked_at IS NULL', [sha256(raw)]);
       clearRefreshCookie(res);
       res.json({ ok: true });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   });
 
   app.get('/api/auth/me', auth, (req: AuthRequest, res: Response): void => {
     const user = req.user!;
     res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+  });
+
+  app.get('/api/auth/sessions', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = readRefreshToken(req);
+      const currentHash = raw ? sha256(raw) : '';
+      const rows = await query<SessionRow>(
+        `SELECT id, token_hash, expires_at, created_at, user_agent, ip_hash
+         FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+         ORDER BY created_at DESC`,
+        [req.user!.id]
+      );
+      res.json({ sessions: rows.map((row) => ({
+        id: row.id,
+        created_at: row.created_at,
+        expires_at: row.expires_at,
+        user_agent: row.user_agent,
+        current: row.token_hash === currentHash
+      })) });
+    } catch (error) { next(error); }
+  });
+
+  app.delete('/api/auth/sessions/others', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const raw = readRefreshToken(req);
+      const currentHash = raw ? sha256(raw) : '';
+      await run(
+        `UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP
+         WHERE user_id = ? AND revoked_at IS NULL AND token_hash <> ?`,
+        [req.user!.id, currentHash]
+      );
+      res.json({ ok: true });
+    } catch (error) { next(error); }
+  });
+
+  app.delete('/api/auth/sessions/:id', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const id = parseInput(uuidSchema, req.params.id, 'invalid_session_id');
+      const row = await get<{ token_hash: string }>('SELECT token_hash FROM refresh_tokens WHERE id = ? AND user_id = ? AND revoked_at IS NULL', [id, req.user!.id]);
+      if (!row) throw new AppError('session_not_found', 404);
+      await run('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [id, req.user!.id]);
+      const raw = readRefreshToken(req);
+      const current = Boolean(raw && sha256(raw) === row.token_hash);
+      if (current) clearRefreshCookie(res);
+      res.json({ ok: true, current });
+    } catch (error) { next(error); }
   });
 
   app.post('/api/auth/create-user', auth, requireAdmin, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
@@ -278,8 +316,6 @@ export function authRoutes(app: Express): void {
         [id, email, passwordHash, input.name ?? email, 'user', 1]
       );
       res.status(201).json({ id, email, name: input.name ?? email, role: 'user' });
-    } catch (error) {
-      next(error);
-    }
+    } catch (error) { next(error); }
   });
 }
