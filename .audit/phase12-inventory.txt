@@ -83,6 +83,7 @@
 ./server/src/providers/types.ts
 ./server/src/redaction.test.ts
 ./server/src/redaction.ts
+./server/src/repositories/integrations.repository.ts
 ./server/src/repositories/providers.repository.ts
 ./server/src/repositories/sessions.repository.ts
 ./server/src/repositories/users.repository.ts
@@ -429,6 +430,7 @@ client/src/pages/TerminalPage.tsx:9:type TerminalEvent = { type: 'session_starte
 ./server/src/repositories/sessions.repository.ts:1:import { and, desc, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 ./server/src/repositories/providers.repository.ts:1:import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 ./server/src/repositories/users.repository.ts:1:import { eq, sql } from 'drizzle-orm';
+./server/src/repositories/integrations.repository.ts:1:import { and, desc, eq, sql } from 'drizzle-orm';
 ./server/src/db.ts:4:import Database from 'better-sqlite3';
 ./server/src/db.ts:30:  pgPool = new Pool({
 ./server/src/db.ts:106:    await run(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
