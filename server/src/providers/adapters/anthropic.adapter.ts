@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { AppError } from '../../errors.js';
 import type { LLMToolCall, Msg } from '../../llm-types.js';
+import { assertSafeOutboundUrl } from '../../network.js';
 import { resolveProviderUrls } from '../base-url.js';
 import type {
   ModelDiscoveryResult,
@@ -22,6 +23,10 @@ function clientFor(config: ProviderRuntimeConfig): Anthropic {
     apiKey: config.apiKey,
     ...(config.normalizedBaseUrl ? { baseURL: config.normalizedBaseUrl } : {})
   });
+}
+
+async function validateEndpoint(config: ProviderRuntimeConfig): Promise<void> {
+  if (config.normalizedBaseUrl) await assertSafeOutboundUrl(config.normalizedBaseUrl, false);
 }
 
 function systemPrompt(messages: readonly Msg[]): string {
@@ -82,6 +87,10 @@ function parseOutput(output: Anthropic.Message, selectedModel: string): Provider
   };
 }
 
+function requestOptions(signal: AbortSignal | undefined): { signal?: AbortSignal } {
+  return signal ? { signal } : {};
+}
+
 export class AnthropicAdapter implements ProviderAdapter {
   readonly protocol = 'anthropic' as const;
 
@@ -102,6 +111,7 @@ export class AnthropicAdapter implements ProviderAdapter {
 
   async createChatCompletion(input: ProviderChatInput): Promise<ProviderChatResult> {
     const config = normalize(input.config);
+    await validateEndpoint(config);
     const output = await clientFor(config).messages.create({
       model: config.model,
       system: systemPrompt(input.messages),
@@ -115,12 +125,13 @@ export class AnthropicAdapter implements ProviderAdapter {
           input_schema: tool.parameters as Anthropic.Tool.InputSchema
         }))
       } : {})
-    }, { signal: input.signal });
+    }, requestOptions(input.signal));
     return parseOutput(output, config.model);
   }
 
   async *streamChatCompletion(input: ProviderChatInput): AsyncIterable<ProviderStreamEvent> {
     const config = normalize(input.config);
+    await validateEndpoint(config);
     const stream = clientFor(config).messages.stream({
       model: config.model,
       system: systemPrompt(input.messages),
@@ -134,8 +145,7 @@ export class AnthropicAdapter implements ProviderAdapter {
           input_schema: tool.parameters as Anthropic.Tool.InputSchema
         }))
       } : {})
-    }, { signal: input.signal });
-    stream.on('text', (text) => text);
+    }, requestOptions(input.signal));
     for await (const event of stream) {
       if (event.type === 'content_block_delta' && event.delta.type === 'text_delta' && event.delta.text) {
         yield { type: 'text_delta', text: event.delta.text };
