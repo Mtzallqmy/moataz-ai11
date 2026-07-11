@@ -6,6 +6,7 @@
 .bootstrap/phase1/part00
 .dockerignore
 .env.example
+.github/workflows/apply-phase1.yml
 .github/workflows/ci.yml
 .github/workflows/export-source.yml
 .github/workflows/generate-analysis-snapshot.yml
