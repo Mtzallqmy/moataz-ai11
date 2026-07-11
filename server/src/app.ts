@@ -13,7 +13,7 @@ import { AppError } from './errors.js';
 import { logger } from './logger.js';
 
 const defaultRuntimeStatus: RuntimeStatus = {
-  telegram: () => ({ enabled: false, botCount: 0 }),
+  telegram: () => ({ enabled: false, botCount: 0, configuredCount: 0, discoveryOnlyCount: 0 }),
   terminal: () => ({ enabled: config.shellAvailable, activeConnections: 0 })
 };
 

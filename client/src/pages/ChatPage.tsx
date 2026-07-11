@@ -30,13 +30,17 @@ export function ChatPage({ request, t, language, onNavigate }: { request: Reques
   const messagesRef = useRef<HTMLDivElement>(null);
 
   const currentChat = useMemo(() => chats.find((chat) => chat.id === current), [chats, current]);
+  const verifiedProviders = useMemo(() => providers.filter((provider) => provider.validation_status === 'verified'), [providers]);
+  const selectedProviderRecord = useMemo(() => providers.find((provider) => provider.id === selectedProvider), [providers, selectedProvider]);
+  const providerReady = selectedProviderRecord?.validation_status === 'verified';
 
   const loadProviders = useCallback(async () => {
     const response = await request<{ providers: ProviderSummary[] }>('/api/providers');
     setProviders(response.providers);
-    if (!selectedProvider && response.providers[0]) {
-      setSelectedProvider(response.providers[0].id);
-      setSelectedModel(response.providers[0].default_model);
+    const firstVerified = response.providers.find((provider) => provider.validation_status === 'verified');
+    if (!selectedProvider && firstVerified) {
+      setSelectedProvider(firstVerified.id);
+      setSelectedModel(firstVerified.default_model);
     }
   }, [request, selectedProvider]);
 
@@ -67,8 +71,12 @@ export function ChatPage({ request, t, language, onNavigate }: { request: Reques
   }, [messages, loading]);
 
   const createChat = async () => {
-    if (providers.length === 0) { onNavigate('providers'); return; }
-    const provider = providers.find((entry) => entry.id === selectedProvider) ?? providers[0]!;
+    if (verifiedProviders.length === 0) {
+      setError(language === 'ar' ? 'لا يوجد مزوّد تم اختباره بنجاح. افتح صفحة المزوّدات واضغط اختبار الاتصال.' : 'No verified provider is available. Open Providers and test a connection first.');
+      onNavigate('providers');
+      return;
+    }
+    const provider = verifiedProviders.find((entry) => entry.id === selectedProvider) ?? verifiedProviders[0]!;
     setError('');
     try {
       const response = await request<{ id: string }>('/api/chats', {
@@ -123,7 +131,10 @@ export function ChatPage({ request, t, language, onNavigate }: { request: Reques
   };
 
   const send = async () => {
-    if (!current || !input.trim() || loading) return;
+    if (!current || !input.trim() || loading || !providerReady) {
+      if (!providerReady) setError(language === 'ar' ? 'اختبر المزوّد بنجاح قبل إرسال الرسائل.' : 'Verify the provider before sending messages.');
+      return;
+    }
     const content = input.trim();
     const temporaryId = `temp-${crypto.randomUUID()}`;
     const key = crypto.randomUUID();
@@ -147,7 +158,7 @@ export function ChatPage({ request, t, language, onNavigate }: { request: Reques
 
   return (
     <div className="chat-page">
-      <PageHeader title={t('chat')} description={language === 'ar' ? 'اختر المزوّد والنموذج لكل محادثة. أخطاء المزود تظهر كما أعادها فعليًا.' : 'Choose a provider and model per conversation. Real provider errors are displayed.'} actions={<button type="button" onClick={() => { void createChat(); }}>{t('newChat')}</button>} />
+      <PageHeader title={t('chat')} description={language === 'ar' ? 'اختر مزوّدًا تم اختباره ونموذجًا لكل محادثة. وضع الوكيل يستخدم الاستدعاء الرسمي للأدوات عندما يدعمه المزود.' : 'Choose a verified provider and model per conversation. Agent mode uses native tool calling when the provider supports it.'} actions={<button type="button" onClick={() => { void createChat(); }}>{t('newChat')}</button>} />
       {error && <Notice tone="error" onDismiss={() => setError('')}><pre>{error}</pre></Notice>}
       <div className="chat-workspace">
         <aside className="conversation-list">
@@ -157,7 +168,7 @@ export function ChatPage({ request, t, language, onNavigate }: { request: Reques
 
         <section className="conversation-panel">
           <div className="conversation-toolbar">
-            <label><span>{t('selectProvider')}</span><select value={selectedProvider} onChange={(event) => { void changeProvider(event.target.value); }} disabled={providers.length === 0}><option value="">—</option>{providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name} · {provider.type}</option>)}</select></label>
+            <label><span>{t('selectProvider')}</span><select value={selectedProvider} onChange={(event) => { void changeProvider(event.target.value); }} disabled={providers.length === 0}><option value="">—</option>{providers.map((provider) => <option key={provider.id} value={provider.id} disabled={provider.validation_status !== 'verified'}>{provider.name} · {provider.type} · {provider.validation_status === 'verified' ? t('verified') : t('untested')}</option>)}</select></label>
             <label><span>{t('selectModel')}</span><input value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)} onBlur={() => { if (current) void updateConversation({ model: selectedModel || null }); }} /></label>
             <label><span>{t('chatMode')}</span><select value={mode} onChange={(event) => { const next = event.target.value as 'chat' | 'agent'; setMode(next); if (current) void updateConversation({ mode: next }); }}><option value="agent">{t('agentMode')}</option><option value="chat">{t('simpleChat')}</option></select></label>
             {current && <button type="button" className="danger ghost compact" onClick={() => { void deleteChat(); }}>{t('delete')}</button>}
@@ -168,7 +179,7 @@ export function ChatPage({ request, t, language, onNavigate }: { request: Reques
             {messages.map((message) => <article key={message.id} className={`msg ${message.role}`}><div className="message-role">{message.role === 'user' ? (language === 'ar' ? 'أنت' : 'You') : 'Moataz AI'}</div><pre>{message.content}</pre><ToolTimeline calls={Array.isArray(message.tool_calls) ? message.tool_calls : []} /></article>)}
             {loading && <div className="typing" aria-label={t('loading')}><span /><span /><span /></div>}
           </div>
-          {current && <div className="composer"><textarea rows={2} placeholder={t('message')} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button type="button" onClick={() => { void send(); }} disabled={!input.trim() || loading || !selectedProvider}>{t('send')}</button></div>}
+          {current && <div className="composer"><textarea rows={2} placeholder={t('message')} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button type="button" onClick={() => { void send(); }} disabled={!input.trim() || loading || !selectedProvider || !providerReady}>{t('send')}</button></div>}
         </section>
       </div>
     </div>

@@ -11,6 +11,7 @@ import { consumeTerminalTicket, issueTerminalTicket } from './ws-tickets.js';
 const app = createApp();
 let adminToken = '';
 let adminId = '';
+let unverifiedProviderId = '';
 
 beforeAll(async () => {
   await migrate();
@@ -80,6 +81,15 @@ describe('phase 1 HTTP integration', () => {
   });
 
 
+  it('exposes provider presets without exposing credentials', async () => {
+    const response = await request(app).get('/api/provider-catalog').set('Authorization', `Bearer ${adminToken}`).expect(200);
+    expect(response.body.providers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'nvidia', defaultBaseUrl: 'https://integrate.api.nvidia.com/v1' }),
+      expect.objectContaining({ id: 'huggingface', defaultBaseUrl: 'https://router.huggingface.co/v1' }),
+      expect.objectContaining({ id: 'custom', baseUrlRequired: true })
+    ]));
+  });
+
   it('saves provider configuration without forcing a paid upstream request', async () => {
     const response = await request(app)
       .post('/api/providers')
@@ -93,6 +103,7 @@ describe('phase 1 HTTP integration', () => {
       })
       .expect(201);
     expect(response.body.provider.validation_status).toBe('untested');
+    unverifiedProviderId = response.body.provider.id as string;
     const listed = await request(app).get('/api/providers').set('Authorization', `Bearer ${adminToken}`).expect(200);
     expect(listed.body.providers).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: response.body.provider.id, validation_status: 'untested' })
@@ -107,11 +118,27 @@ describe('phase 1 HTTP integration', () => {
         name: 'Telegram staging bot',
         type: 'telegram',
         token: '123456789:abcdefghijklmnopqrstuvwxyz_ABC123',
-        meta: { allowedChatIds: ['123456789'] }
+        meta: { allowedChatIds: [], allowAllChats: false }
       })
       .expect(201);
     expect(response.body.integration.validation_status).toBe('untested');
-    expect(response.body.integration.meta.allowedChatIds).toEqual(['123456789']);
+    expect(response.body.integration.meta.allowedChatIds).toEqual([]);
+    expect(response.body.integration.meta.allowAllChats).toBe(false);
+  });
+
+  it('blocks chat execution until the selected provider is verified', async () => {
+    const created = await request(app)
+      .post('/api/chats')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ providerId: unverifiedProviderId, mode: 'chat' })
+      .expect(201);
+    const response = await request(app)
+      .post(`/api/chats/${created.body.id as string}/messages`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .set('Idempotency-Key', crypto.randomUUID())
+      .send({ content: 'hello' })
+      .expect(409);
+    expect(response.body.error).toBe('provider_not_verified');
   });
 
   it('prevents cross-user provider and chat access', async () => {
