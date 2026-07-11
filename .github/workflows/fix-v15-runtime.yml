@@ -1,0 +1,87 @@
+name: Fix v1.5 runtime safety
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.head_ref == 'fix/provider-session-attachments-v1.5'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - name: Apply runtime safety corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path('server/src/app.ts')
+          text = app.read_text()
+          old = "  app.use(express.json({ limit: '1mb', strict: true }));"
+          new = """  const jsonParser = express.json({ limit: '1mb', strict: true });
+            app.use((req, res, next) => {
+              const attachmentUpload = req.method === 'POST' && /^\\/api\\/chats\\/[0-9a-f-]{36}\\/attachments$/i.test(req.path);
+              if (attachmentUpload) {
+                next();
+                return;
+              }
+              jsonParser(req, res, next);
+            });"""
+          if old not in text: raise SystemExit('JSON parser marker missing')
+          app.write_text(text.replace(old, new, 1))
+
+          routes = Path('server/src/routes.ts')
+          text = routes.read_text()
+          text = text.replace(
+              "    let runId: string | undefined;\n    let locked = false;\n    try {\n      const input = parseInput(messageSchema, req.body);\n      const attachmentIds = input.attachmentIds ?? [];",
+              "    let runId: string | undefined;\n    let userMessageId: string | undefined;\n    let attachmentIds: string[] = [];\n    let locked = false;\n    try {\n      const input = parseInput(messageSchema, req.body);\n      attachmentIds = input.attachmentIds ?? [];",
+              1
+          )
+          text = text.replace("      const userMessageId = cryptoId();\n      runId = cryptoId();", "      userMessageId = cryptoId();\n      runId = cryptoId();", 1)
+          old_catch = """    } catch (error) {
+              if (runId) {
+                await run('UPDATE agent_runs SET status = ?, error_code = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?', ['failed', errorCode(error), runId]).catch(() => undefined);
+              }
+              next(error);
+            } finally {"""
+          new_catch = """    } catch (error) {
+              if (userMessageId) {
+                await transaction([
+                  {
+                    sql: 'UPDATE attachments SET message_id = NULL WHERE message_id = ? AND chat_id = ? AND user_id = ?',
+                    params: [userMessageId, chatId, req.user!.id]
+                  },
+                  {
+                    sql: 'DELETE FROM messages WHERE id = ? AND chat_id = ? AND user_id = ? AND role = ?',
+                    params: [userMessageId, chatId, req.user!.id, 'user']
+                  }
+                ]).catch(() => undefined);
+              }
+              if (runId) {
+                await run('UPDATE agent_runs SET status = ?, error_code = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?', ['failed', errorCode(error), runId]).catch(() => undefined);
+              }
+              next(error);
+            } finally {"""
+          if old_catch not in text: raise SystemExit('message catch marker missing')
+          routes.write_text(text.replace(old_catch, new_catch, 1))
+          PY
+          rm -f .github/workflows/fix-v15-runtime.yml
+      - name: Commit runtime corrections
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: preserve retryable attachments and raw upload bodies'
+          git push origin HEAD:${{ github.head_ref }}
