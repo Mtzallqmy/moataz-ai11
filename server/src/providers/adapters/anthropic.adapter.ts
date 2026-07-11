@@ -31,12 +31,12 @@ function systemText(messages: readonly Msg[]): string {
 function anthropicMessages(messages: readonly Msg[]): Anthropic.MessageParam[] {
   return messages.filter((message) => message.role !== 'system').map((message): Anthropic.MessageParam => {
     if (message.role === 'assistant') {
-      const blocks: Anthropic.ContentBlockParam[] = [];
+      const blocks: Array<Record<string, unknown>> = [];
       if (message.content) blocks.push({ type: 'text', text: message.content });
       for (const call of message.toolCalls ?? []) {
         blocks.push({ type: 'tool_use', id: call.id, name: call.name, input: call.arguments });
       }
-      return { role: 'assistant', content: blocks.length ? blocks : message.content };
+      return { role: 'assistant', content: (blocks.length ? blocks : message.content) as unknown as Anthropic.MessageParam['content'] };
     }
     if (message.role === 'tool') {
       return {
@@ -44,7 +44,7 @@ function anthropicMessages(messages: readonly Msg[]): Anthropic.MessageParam[] {
         content: [{ type: 'tool_result', tool_use_id: message.toolCallId, content: message.content, is_error: false }]
       };
     }
-    const blocks: Anthropic.ContentBlockParam[] = [];
+    const blocks: Array<Record<string, unknown>> = [];
     for (const image of message.images ?? []) {
       if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(image.mimeType)) continue;
       blocks.push({
@@ -53,7 +53,7 @@ function anthropicMessages(messages: readonly Msg[]): Anthropic.MessageParam[] {
       });
     }
     blocks.push({ type: 'text', text: message.content });
-    return { role: 'user', content: blocks };
+    return { role: 'user', content: blocks as unknown as Anthropic.MessageParam['content'] };
   });
 }
 
@@ -82,7 +82,7 @@ export class AnthropicAdapter implements ProviderAdapter {
     };
   }
 
-  async discoverModels(): Promise<ModelDiscoveryResult> {
+  async discoverModels(_config: NormalizedProviderConfig): Promise<ModelDiscoveryResult> {
     return {
       status: 'unsupported',
       models: this.definition.modelExamples.map((id) => ({ id })),
@@ -146,7 +146,7 @@ export class AnthropicAdapter implements ProviderAdapter {
         system: systemText(input.messages),
         messages: anthropicMessages(input.messages),
         ...(input.tools?.length ? {
-          tools: input.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters as Anthropic.Tool.InputSchema }))
+          tools: input.tools.map((tool) => ({ name: tool.name, description: tool.description, input_schema: tool.parameters as unknown as Anthropic.Tool.InputSchema }))
         } : {})
       }, { signal: controller.signal });
       const text = output.content.filter((block) => block.type === 'text').map((block) => block.text).join('\n').trim();

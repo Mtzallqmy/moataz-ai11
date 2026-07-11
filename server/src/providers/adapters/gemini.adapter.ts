@@ -160,11 +160,12 @@ export class GeminiAdapter implements ProviderAdapter {
       const declarations: FunctionDeclaration[] = (input.tools ?? []).map((tool) => ({
         name: tool.name,
         description: tool.description,
-        parameters: tool.parameters as FunctionDeclaration['parameters']
+        parameters: tool.parameters as unknown as NonNullable<FunctionDeclaration['parameters']>
       }));
+      const systemInstruction = systemText(input.messages);
       const model = client.getGenerativeModel({
         model: input.model.replace(/^models\//, ''),
-        ...(systemText(input.messages) ? { systemInstruction: systemText(input.messages) } : {}),
+        ...(systemInstruction ? { systemInstruction } : {}),
         ...(declarations.length ? { tools: [{ functionDeclarations: declarations }] } : {})
       });
       const contents = geminiContents(input.messages);
@@ -177,13 +178,19 @@ export class GeminiAdapter implements ProviderAdapter {
         else input.signal.addEventListener('abort', abort, { once: true });
       }
       try {
-        const response = await model.generateContent({
+        const request = model.generateContent({
           contents,
           generationConfig: {
             temperature: input.temperature ?? 0.3,
             ...(input.maxTokens !== undefined ? { maxOutputTokens: input.maxTokens } : {})
           }
-        }, { signal: controller.signal });
+        });
+        const response = await Promise.race([
+          request,
+          new Promise<never>((_resolve, reject) => {
+            controller.signal.addEventListener('abort', () => reject(controller.signal.reason ?? new Error('provider_timeout')), { once: true });
+          })
+        ]);
         const result = response.response;
         const text = result.text().trim();
         const calls: LLMToolCall[] = result.functionCalls()?.map((call, index) => ({

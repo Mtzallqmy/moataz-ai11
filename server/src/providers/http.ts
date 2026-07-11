@@ -7,7 +7,7 @@ export type ProviderHttpResponse = {
   payload: unknown;
   status: number;
   headers: Headers;
-  requestId?: string;
+  requestId?: string | undefined;
   latencyMs: number;
   url: string;
 };
@@ -17,7 +17,7 @@ type ProviderHttpOptions = {
   url: string;
   config: NormalizedProviderConfig;
   body?: unknown;
-  signal?: AbortSignal;
+  signal?: AbortSignal | undefined;
   timeoutMs: number;
   maxResponseBytes: number;
 };
@@ -119,7 +119,6 @@ export async function providerHttpJson(options: ProviderHttpOptions): Promise<Pr
       const diagnostic = diagnoseProviderError(error, {
         testedEndpoint: validated.toString(),
         latencyMs,
-        requestId: undefined
       });
       throw diagnosticToAppError(diagnostic);
     }

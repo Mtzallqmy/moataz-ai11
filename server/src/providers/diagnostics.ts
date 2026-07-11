@@ -5,11 +5,11 @@ import type { ProviderDiagnosticResult, ProviderDiagnosticStatus } from './types
 type UnknownRecord = Record<string, unknown>;
 
 type DiagnosticContext = {
-  requestId?: string;
-  testedEndpoint?: string;
-  testedModel?: string;
-  latencyMs?: number;
-  discoverySucceeded?: boolean;
+  requestId?: string | undefined;
+  testedEndpoint?: string | undefined;
+  testedModel?: string | undefined;
+  latencyMs?: number | undefined;
+  discoverySucceeded?: boolean | undefined;
 };
 
 function record(value: unknown): UnknownRecord {
@@ -68,7 +68,7 @@ function headerValue(error: unknown, names: readonly string[]): string | undefin
 function result(
   status: ProviderDiagnosticStatus,
   input: {
-    success?: boolean;
+    success?: boolean | undefined;
     keyValid: boolean | null;
     providerReachable: boolean | null;
     modelAvailable: boolean | null;
@@ -76,9 +76,9 @@ function result(
     message: string;
     userMessageAr: string;
     userMessageEn: string;
-    httpStatus?: number;
-    providerCode?: string;
-    upstreamRequestId?: string;
+    httpStatus?: number | undefined;
+    providerCode?: string | undefined;
+    upstreamRequestId?: string | undefined;
   },
   context: DiagnosticContext
 ): ProviderDiagnosticResult {

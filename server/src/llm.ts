@@ -1,5 +1,5 @@
 import { AppError } from './errors.js';
-import type { AgentStep, LLMImage, LLMToolCall, LLMToolSpec, Msg } from './llm-types.js';
+import type { AgentStep, LLMToolSpec, Msg } from './llm-types.js';
 import { diagnosticToAppError } from './providers/diagnostics.js';
 import { getProviderDefinition, normalizeProviderConfig, providerAdapterFor } from './providers/index.js';
 import type { ModelDiscoveryResult, ProviderDiagnosticResult } from './providers/types.js';
