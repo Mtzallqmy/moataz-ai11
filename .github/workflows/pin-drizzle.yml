@@ -1,0 +1,35 @@
+name: Pin Drizzle versions
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  pin:
+    if: github.head_ref == 'feat/providers-drizzle-phase12'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: |
+          set -euo pipefail
+          npm install drizzle-orm@0.36.4
+          npm install --save-dev drizzle-kit@0.28.1
+          rm -f .github/workflows/pin-drizzle.yml
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json .github/workflows/pin-drizzle.yml
+          git commit -m 'build: pin Drizzle for strict TypeScript compatibility'
+          git push origin HEAD:${{ github.head_ref }}
