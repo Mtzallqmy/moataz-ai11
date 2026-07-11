@@ -1,0 +1,26 @@
+name: Apply provider route updates
+
+on:
+  push:
+    branches: [feat/provider-registry-drizzle-v2]
+    paths:
+      - '.bootstrap/apply-routes-phase1.txt'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/provider-registry-drizzle-v2
+          fetch-depth: 0
+      - run: python3 .bootstrap/routes-phase1.py
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add server/src/routes.ts
+          git commit -m 'feat: add normalized provider discovery and retest routes'
+          git push origin HEAD:feat/provider-registry-drizzle-v2
