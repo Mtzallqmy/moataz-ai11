@@ -1,14 +1,16 @@
 name: Phase 1-2 repository audit
 
 on:
-  push:
-    branches: [feat/provider-drizzle-phase12]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
 
 jobs:
   audit:
+    if: github.head_ref == 'feat/provider-drizzle-phase12'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
