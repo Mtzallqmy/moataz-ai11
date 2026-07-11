@@ -10,6 +10,23 @@ export type ProviderCatalogEntry = {
   modelExamples: readonly string[];
 };
 
+export type ProviderDiagnostic = {
+  providerType: string;
+  availability: 'available' | 'limited' | 'unavailable' | 'unknown';
+  plan: 'free' | 'paid' | 'mixed' | 'unknown';
+  billing: 'request_succeeded' | 'credits_required' | 'rate_limited' | 'not_checked' | 'unknown';
+  planDetection: 'provider_declared' | 'inferred_from_error' | 'not_exposed';
+  completionSucceeded: boolean;
+  modelsEndpoint: 'supported' | 'unsupported' | 'failed' | 'not_checked';
+  modelCount: number;
+  selectedModel?: string;
+  errorStage?: string;
+  retryable: boolean;
+  evidence: string[];
+  note: string;
+  checkedAt: string;
+};
+
 export type ProviderSummary = {
   id: string;
   name: string;
@@ -41,6 +58,7 @@ export type IntegrationSummary = {
     discoveredChats?: DiscoveredTelegramChat[];
     baseUrl?: string;
     identity?: Record<string, unknown>;
+    chatPreferences?: Record<string, { providerId?: string; mode?: 'chat' | 'agent' }>;
     [key: string]: unknown;
   };
   validation_status: ValidationStatus;
@@ -59,6 +77,18 @@ export type ChatSummary = {
   mode?: 'chat' | 'agent';
 };
 
+export type CapabilityStatus = {
+  chat: boolean;
+  agent: boolean;
+  files: boolean;
+  webFetch: boolean;
+  webSearch: boolean;
+  github: boolean;
+  telegram: boolean;
+  sandbox: boolean;
+  terminal: boolean;
+};
+
 export type SystemStatus = {
   version: string;
   database: 'ready' | 'unavailable';
@@ -67,4 +97,9 @@ export type SystemStatus = {
   terminal: { enabled: boolean; activeConnections: number };
   uptimeSeconds: number;
   providerCount: number;
+  verifiedProviderCount?: number;
+  integrationCount?: number;
+  verifiedIntegrationCount?: number;
+  toolCount?: number;
+  capabilities?: CapabilityStatus;
 };

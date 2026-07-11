@@ -15,6 +15,7 @@ import { redactText } from './redaction.js';
 import { appVersion } from './version.js';
 import { upstreamAppError } from './upstream-errors.js';
 import { assertProviderCredentials, providerCatalog, resolveProviderBaseUrl } from './providers.js';
+import { providerErrorWithDiagnostic, successfulProviderDiagnostic } from './provider-diagnostics.js';
 import { fetchWithValidatedRedirects, readLimitedText } from './network.js';
 import type { TelegramStatus } from './telegram.js';
 
@@ -290,8 +291,29 @@ function providerInput(input: z.infer<typeof providerTestSchema>, name = 'Connec
   };
 }
 
-async function validateProvider(input: z.infer<typeof providerTestSchema>): Promise<{ message: string; model: string }> {
-  return testProviderConnection(providerInput(input), input.model ?? '');
+async function validateProvider(input: z.infer<typeof providerTestSchema>): Promise<{ message: string; model: string; diagnostic: ReturnType<typeof successfulProviderDiagnostic> }> {
+  const provider = providerInput(input);
+  const result = await testProviderConnection(provider, input.model ?? '');
+  let modelsSupported = false;
+  let modelsFailed = false;
+  let modelCount = 0;
+  try {
+    const discovery = await listProviderModels(provider);
+    modelsSupported = discovery.supported;
+    modelCount = discovery.models.length;
+  } catch {
+    modelsFailed = true;
+  }
+  return {
+    ...result,
+    diagnostic: successfulProviderDiagnostic({
+      providerType: input.type,
+      selectedModel: result.model,
+      modelsSupported,
+      modelsFailed,
+      modelCount
+    })
+  };
 }
 
 function modelDiscoveryProvider(input: { type: string; apiKey: string | undefined; baseUrl: unknown }): Provider {
@@ -322,6 +344,19 @@ function normalizeDiscoveredChats(value: unknown): Array<Record<string, unknown>
       ...(typeof item.lastSeenAt === 'string' ? { lastSeenAt: item.lastSeenAt } : {})
     }];
   }).slice(0, 20);
+}
+
+function normalizeTelegramPreferences(value: unknown): Record<string, { providerId?: string; mode: 'chat' | 'agent' }> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).flatMap(([chatId, raw]) => {
+    if (!/^-?\d{1,24}$/.test(chatId) || raw === null || typeof raw !== 'object' || Array.isArray(raw)) return [];
+    const preference = raw as Record<string, unknown>;
+    const providerId = typeof preference.providerId === 'string' && /^[0-9a-f-]{36}$/i.test(preference.providerId)
+      ? preference.providerId
+      : undefined;
+    const mode: 'chat' | 'agent' = preference.mode === 'chat' ? 'chat' : 'agent';
+    return [[chatId, { ...(providerId ? { providerId } : {}), mode }]];
+  }).slice(0, 20));
 }
 
 function normalizeIntegrationMeta(type: IntegrationType, meta: Record<string, unknown>): Record<string, unknown> {
@@ -361,6 +396,7 @@ function normalizeIntegrationMeta(type: IntegrationType, meta: Record<string, un
     ...(allowedChatIds[0] ? { chatId: allowedChatIds[0] } : {}),
     allowAllChats: meta.allowAllChats === true,
     discoveredChats: normalizeDiscoveredChats(meta.discoveredChats),
+    chatPreferences: normalizeTelegramPreferences(meta.chatPreferences),
     ...(meta.identity !== null && typeof meta.identity === 'object' && !Array.isArray(meta.identity) ? { identity: meta.identity } : {})
   };
 }
@@ -492,9 +528,12 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
 
   app.get('/api/system/status', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const count = await get<{ count: number | string }>('SELECT COUNT(*) AS count FROM providers WHERE user_id = ? AND is_active = 1', [req.user!.id]);
-      const sandboxCount = await get<{ count: number | string }>("SELECT COUNT(*) AS count FROM integrations WHERE user_id = ? AND type = 'sandbox' AND is_active = 1 AND validation_status = 'verified'", [req.user!.id]);
-      const externalSandboxConfigured = Number(sandboxCount?.count ?? 0) > 0;
+      const providers = await query<{ validation_status: string }>('SELECT validation_status FROM providers WHERE user_id = ? AND is_active = 1', [req.user!.id]);
+      const integrations = await query<{ type: string; validation_status: string }>('SELECT type, validation_status FROM integrations WHERE user_id = ? AND is_active = 1', [req.user!.id]);
+      const verifiedProviderCount = providers.filter((provider) => provider.validation_status === 'verified').length;
+      const verifiedIntegrations = integrations.filter((integration) => integration.validation_status === 'verified');
+      const verifiedTypes = new Set(verifiedIntegrations.map((integration) => integration.type));
+      const externalSandboxConfigured = verifiedTypes.has('sandbox');
       const database = await ping();
       const telegram = runtimeStatus.telegram();
       const terminal = runtimeStatus.terminal();
@@ -505,7 +544,22 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
         telegram,
         terminal: { enabled: terminal.enabled, activeConnections: terminal.activeConnections },
         uptimeSeconds: Math.floor(process.uptime()),
-        providerCount: Number(count?.count ?? 0)
+        providerCount: providers.length,
+        verifiedProviderCount,
+        integrationCount: integrations.length,
+        verifiedIntegrationCount: verifiedIntegrations.length,
+        toolCount: toolCatalog.length,
+        capabilities: {
+          chat: verifiedProviderCount > 0,
+          agent: verifiedProviderCount > 0,
+          files: true,
+          webFetch: true,
+          webSearch: verifiedTypes.has('brave_search') || verifiedTypes.has('tavily'),
+          github: verifiedTypes.has('github'),
+          telegram: telegram.enabled,
+          sandbox: externalSandboxConfigured,
+          terminal: terminal.enabled || externalSandboxConfigured
+        }
       });
     } catch (error) {
       next(error);
@@ -618,8 +672,10 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
   });
 
   app.post('/api/providers/test', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    let providerType = 'provider';
     try {
       const input = parseInput(providerTestSchema, req.body);
+      providerType = input.type;
       const result = await validateProvider({
         type: input.type,
         apiKey: input.apiKey ?? '',
@@ -631,10 +687,11 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
         provider: input.type,
         model: result.model,
         responsePreview: result.message,
+        diagnostic: result.diagnostic,
         stages: { url: 'passed', network: 'passed', authentication: 'passed', model: 'passed', completion: 'passed' }
       });
     } catch (error) {
-      next(error);
+      next(providerErrorWithDiagnostic(providerType, error));
     }
   });
 
@@ -665,16 +722,23 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       try { return routeId(req); } catch (error) { next(error); return undefined; }
     })();
     if (!id) return;
+    let providerType = 'provider';
     try {
       const row = await providerRowForUser(req.user!.id, id);
       if (!row) throw new AppError('provider_not_found', 404);
-      const result = await testProviderConnection(providerFromRow(row), row.default_model);
+      providerType = row.type;
+      const result = await validateProvider({
+        type: row.type,
+        apiKey: decrypt(row.api_key_enc),
+        model: row.default_model,
+        ...(row.base_url ? { baseUrl: row.base_url } : {})
+      });
       await run(
         `UPDATE providers SET validation_status = 'verified', validation_error_code = NULL,
          validated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
         [id, req.user!.id]
       );
-      res.json({ ok: true, id, model: result.model, responsePreview: result.message, validation_status: 'verified' });
+      res.json({ ok: true, id, model: result.model, responsePreview: result.message, diagnostic: result.diagnostic, validation_status: 'verified' });
     } catch (error) {
       const code = errorCode(error);
       await run(
@@ -682,7 +746,7 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
          validated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
         [code, id, req.user!.id]
       ).catch(() => undefined);
-      next(error);
+      next(providerErrorWithDiagnostic(providerType, error));
     }
   });
 

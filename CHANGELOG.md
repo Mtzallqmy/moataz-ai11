@@ -2,6 +2,18 @@
 
 All notable changes are documented here. The project version is synchronized with `package.json`.
 
+## [1.4.0] — 2026-07-11
+
+### Telegram console and provider diagnostics
+
+- Added a Telegram inline control panel, registered bot commands, provider selection, chat/agent mode, status, diagnostics, workspace file listing/reading, web search/fetch, GitHub repository inspection, tool confirmation, and direct links into the web dashboard.
+- Persisted per-Chat-ID Telegram provider and mode preferences in encrypted integration metadata while keeping conversation context bounded in memory.
+- Added explicit API diagnostics for authentication, authorization, model access, billing/credits, rate limits, network, timeout, service availability, and model-list support.
+- Added honest free/paid reporting: successful requests prove current access but do not guess the plan when the provider does not expose it; explicit billing errors are shown as credits/payment required.
+- Changed provider setup to Save & verify so valid keys become usable immediately and failed keys remain saved with actionable diagnostics.
+- Added capability status to the dashboard and direct `?page=` navigation used by Telegram buttons.
+- Improved provider cards, diagnostics, capability cards, mobile actions, typography, spacing, status colors, and responsive layouts.
+
 ## [1.3.0] — 2026-07-11
 
 ### Provider platform v2
