@@ -135,16 +135,8 @@ server/src/tools.ts:357:      return { url: response.url, status: response.statu
 server/src/tools.ts:368:      const contentType = response.headers.get('content-type') ?? '';
 server/src/tools.ts:409:        const response = await new Octokit({ auth: integration.token }).repos.get({ owner, repo });
 server/src/tools.ts:470:  const definition = toolRegistry.get(name);
-server/src/auth.ts:8:import { cryptoId, get, query, run, sha256, transaction, type DbRow } from './db.js';
-server/src/auth.ts:180:  await run(
-server/src/auth.ts:212:      await run('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
-server/src/auth.ts:234:      await transaction([
-server/src/auth.ts:251:      if (raw) await run('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = ? AND revoked_at IS NULL', [sha256(raw)]);
-server/src/auth.ts:257:  app.get('/api/auth/me', auth, (req: AuthRequest, res: Response): void => {
-server/src/auth.ts:262:  app.get('/api/auth/sessions', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-server/src/auth.ts:286:      await run(
-server/src/auth.ts:300:      await run('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [id, req.user!.id]);
-server/src/auth.ts:314:      await run(
+server/src/auth.ts:249:  app.get('/api/auth/me', auth, (req: AuthRequest, res: Response): void => {
+server/src/auth.ts:254:  app.get('/api/auth/sessions', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
 server/src/telegram.ts:2:import { get, query, run } from './db.js';
 server/src/telegram.ts:151:  await run('UPDATE integrations SET meta = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [JSON.stringify(meta), row.id, row.user_id]);
 server/src/telegram.ts:174:  const existing = sessions.get(key);
@@ -610,15 +602,16 @@ client/src/pages/TerminalPage.tsx:9:type TerminalEvent = { type: 'session_starte
 ./.github/workflows/phase12-audit.yml:37:            grep -RInE "CREATE TABLE|ALTER TABLE|schema_migrations|drizzle|better-sqlite3|new Pool|DATABASE_" . --exclude-dir=.git --exclude=package-lock.json || true
 
 # Route inventory
-server/src/auth.ts:217:  app.post('/api/auth/login', handleLogin);
-server/src/auth.ts:218:  app.post('/api/login', handleLogin);
-server/src/auth.ts:220:  app.post('/api/auth/refresh', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-server/src/auth.ts:248:  app.post('/api/auth/logout', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-server/src/auth.ts:257:  app.get('/api/auth/me', auth, (req: AuthRequest, res: Response): void => {
-server/src/auth.ts:262:  app.get('/api/auth/sessions', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-server/src/auth.ts:282:  app.delete('/api/auth/sessions/others', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-server/src/auth.ts:295:  app.delete('/api/auth/sessions/:id', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-server/src/auth.ts:308:  app.post('/api/auth/create-user', auth, requireAdmin, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/auth.ts:210:  app.post('/api/auth/login', handleLogin);
+server/src/auth.ts:211:  app.post('/api/login', handleLogin);
+server/src/auth.ts:213:  app.post('/api/auth/refresh', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+server/src/auth.ts:240:  app.post('/api/auth/logout', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+server/src/auth.ts:249:  app.get('/api/auth/me', auth, (req: AuthRequest, res: Response): void => {
+server/src/auth.ts:254:  app.get('/api/auth/sessions', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/auth.ts:270:  app.delete('/api/auth/sessions/others', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/auth.ts:278:  app.delete('/api/auth/sessions/:id', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/auth.ts:291:  app.post('/api/auth/sessions/revoke-all', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/auth.ts:299:  app.post('/api/auth/create-user', auth, requireAdmin, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
 server/src/terminal.ts:71:  app.post('/api/auth/ws-ticket', auth, requireAdmin, async (req: AuthRequest, res, next): Promise<void> => {
 server/src/app.test.ts:8:    expect(app.get('trust proxy')).toBe(1);
 server/src/app.ts:37:  if (config.isRailway && (app.get('trust proxy') === false || app.get('trust proxy') === 0)) {
