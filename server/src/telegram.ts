@@ -1,5 +1,9 @@
 import TelegramBot, { type CallbackQuery, type Message } from 'node-telegram-bot-api';
-import { get, query, run } from './db.js';
+import { diagnoseProviderError } from './providers/diagnostics.js';
+import { integrationsRepository, type IntegrationRecord } from './repositories/integrations.repository.js';
+import { providersRepository, type ProviderRecord } from './repositories/providers.repository.js';
+import { usersRepository } from './repositories/users.repository.js';
+import { providersService } from './services/providers.service.js';
 import { decrypt } from './crypto.js';
 import {
   completeAgentStep,
@@ -12,7 +16,6 @@ import {
 import { config } from './config.js';
 import { AppError } from './errors.js';
 import { logger } from './logger.js';
-import { failedProviderDiagnostic } from './provider-diagnostics.js';
 import { redactSecrets, redactText } from './redaction.js';
 import { runTool, toolCatalog, type IntegrationCredential, type ToolRole } from './tools.js';
 
@@ -27,27 +30,8 @@ export type TelegramController = TelegramStatus & {
   close: () => Promise<void>;
 };
 
-type IntegrationRow = {
-  id: string;
-  user_id: string;
-  token_enc: string;
-  meta: string | null;
-};
-
-type ProviderRow = {
-  id: string;
-  type: string;
-  api_key_enc: string;
-  base_url: string | null;
-  default_model: string;
-  name: string;
-};
-
-type VerifiedIntegrationRow = {
-  type: string;
-  token_enc: string;
-  meta: string | null;
-};
+type IntegrationRow = IntegrationRecord;
+type ProviderRow = ProviderRecord;
 
 type DiscoveredChat = {
   id: string;
@@ -89,8 +73,9 @@ const commandDescriptions = [
   { command: 'help', description: 'شرح الأوامر' }
 ];
 
-function parseMeta(raw: string | null): Record<string, unknown> {
+function parseMeta(raw: Record<string, unknown> | string | null): Record<string, unknown> {
   if (!raw) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw;
   try {
     const value = JSON.parse(raw) as unknown;
     return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -145,11 +130,11 @@ export function mergeDiscoveredChatMeta(meta: Record<string, unknown>, chat: Dis
 }
 
 async function recordDiscoveredChat(row: IntegrationRow, message: Message): Promise<void> {
-  const latest = await get<{ meta: string | null }>('SELECT meta FROM integrations WHERE id = ? AND user_id = ? AND is_active = 1', [row.id, row.user_id]);
+  const latest = await integrationsRepository.findOwned(row.user_id, row.id);
   if (!latest) return;
-  const meta = mergeDiscoveredChatMeta(parseMeta(latest.meta), discoveredChatFromMessage(message));
-  await run('UPDATE integrations SET meta = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [JSON.stringify(meta), row.id, row.user_id]);
-  row.meta = JSON.stringify(meta);
+  const meta = mergeDiscoveredChatMeta(latest.meta, discoveredChatFromMessage(message));
+  await integrationsRepository.updateMeta(row.user_id, row.id, meta);
+  row.meta = meta;
 }
 
 function sessionKey(row: IntegrationRow, chatId: string): string {
@@ -179,60 +164,47 @@ function sessionFor(row: IntegrationRow, chatId: string): TelegramSession {
 }
 
 async function persistSession(row: IntegrationRow, chatId: string, session: TelegramSession): Promise<void> {
-  const latest = await get<{ meta: string | null }>('SELECT meta FROM integrations WHERE id = ? AND user_id = ? AND is_active = 1', [row.id, row.user_id]);
+  const latest = await integrationsRepository.findOwned(row.user_id, row.id);
   if (!latest) return;
-  const meta = parseMeta(latest.meta);
-  const current = objectRecord(meta.chatPreferences);
+  const current = objectRecord(latest.meta.chatPreferences);
   const ordered = Object.entries(current).filter(([id]) => id !== chatId).slice(0, 19);
   const preference: Record<string, unknown> = { mode: session.mode };
   if (session.providerId) preference.providerId = session.providerId;
   const chatPreferences = Object.fromEntries([[chatId, preference], ...ordered]);
-  const next = { ...meta, chatPreferences };
-  await run('UPDATE integrations SET meta = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [JSON.stringify(next), row.id, row.user_id]);
-  row.meta = JSON.stringify(next);
+  const next = { ...latest.meta, chatPreferences };
+  await integrationsRepository.updateMeta(row.user_id, row.id, next);
+  row.meta = next;
 }
 
 async function providerForTelegram(userId: string, meta: Record<string, unknown>, preferredId?: string): Promise<ProviderRow | undefined> {
   const requested = preferredId ?? (typeof meta.providerId === 'string' ? meta.providerId : undefined);
   if (requested) {
-    const selected = await get<ProviderRow>(
-      `SELECT id, type, api_key_enc, base_url, default_model, name
-       FROM providers WHERE id = ? AND user_id = ? AND is_active = 1 AND validation_status = 'verified'`,
-      [requested, userId]
-    );
-    if (selected) return selected;
+    const selected = await providersRepository.findOwned(userId, requested);
+    if (selected?.is_ready && selected.status === 'ready' && selected.is_enabled) return selected;
   }
-  const providers = await query<ProviderRow>(
-    `SELECT id, type, api_key_enc, base_url, default_model, name
-     FROM providers WHERE user_id = ? AND is_active = 1 AND validation_status = 'verified'
-     ORDER BY validated_at DESC, created_at DESC LIMIT 1`,
-    [userId]
-  );
-  return providers[0];
+  return (await providersRepository.listReadyForUser(userId))[0];
 }
 
 function providerObject(row: ProviderRow): Provider {
   return {
     type: row.type,
     apiKey: decrypt(row.api_key_enc),
-    ...(row.base_url ? { baseUrl: row.base_url } : {}),
-    defaultModel: row.default_model,
+    ...(row.normalized_base_url ? { baseUrl: row.normalized_base_url } : {}),
+    defaultModel: row.selected_model ?? row.default_model,
     name: row.name
   };
 }
 
 async function roleForUser(userId: string): Promise<ToolRole> {
-  const row = await get<{ role: string }>('SELECT role FROM users WHERE id = ?', [userId]);
-  return row?.role === 'admin' ? 'admin' : 'user';
+  return (await usersRepository.findById(userId))?.role === 'admin' ? 'admin' : 'user';
 }
 
 async function integrationsForUser(userId: string): Promise<IntegrationCredential[]> {
-  const rows = await query<VerifiedIntegrationRow>(
-    `SELECT type, token_enc, meta FROM integrations
-     WHERE user_id = ? AND is_active = 1 AND validation_status = 'verified'`,
-    [userId]
-  );
-  return rows.map((entry) => ({ type: entry.type, token: decrypt(entry.token_enc), meta: parseMeta(entry.meta) }));
+  return (await integrationsRepository.listVerified(userId)).map((entry) => ({
+    type: entry.type,
+    token: decrypt(entry.token_enc),
+    meta: entry.meta
+  }));
 }
 
 function pageUrl(page?: string): string {
@@ -306,66 +278,50 @@ async function sendChunks(bot: TelegramBot, chatId: number, text: string, withMe
 }
 
 function explicitProviderError(providerType: string, error: unknown): string {
-  const diagnostic = failedProviderDiagnostic(providerType, error);
-  const stageText: Record<string, string> = {
-    authentication: 'المفتاح أو التوكن غير صحيح أو تم إلغاؤه.',
-    authorization: 'المفتاح معروف لكنه لا يملك صلاحية النموذج أو المورد.',
-    billing: 'المزوّد طلب رصيدًا أو دفعًا. المفتاح قد يكون صحيحًا لكن الحساب لا يملك رصيدًا كافيًا.',
-    rate_limit: 'تم بلوغ حد الطلبات أو التوكنات. انتظر ثم أعد المحاولة.',
-    model_not_found: 'اسم النموذج غير موجود أو غير متاح لهذا الحساب.',
-    invalid_request: 'الرابط أو اسم النموذج أو صيغة الطلب غير صحيحة.',
-    timeout: 'انتهت مهلة الاتصال بالمزوّد.',
-    network: 'تعذر الوصول إلى عنوان المزوّد أو فشل DNS/TLS.',
-    service_unavailable: 'خدمة المزوّد غير متاحة مؤقتًا.',
-    unknown: 'أعاد المزوّد خطأ غير مصنف.'
-  };
+  const diagnostic = diagnoseProviderError(error);
   const details = error instanceof AppError ? objectRecord(error.details) : {};
   const providerMessage = typeof details.providerMessage === 'string'
-    ? `\nرسالة المزوّد: ${redactText(details.providerMessage).slice(0, 700)}`
+    ? `
+رسالة المزوّد: ${redactText(details.providerMessage).slice(0, 700)}`
     : '';
-  return `❌ فشل المزوّد ${providerType}\n${stageText[diagnostic.errorStage ?? 'unknown'] ?? diagnostic.note}${providerMessage}\nقابل لإعادة المحاولة: ${diagnostic.retryable ? 'نعم' : 'لا'}`;
+  return `❌ فشل المزوّد ${providerType}
+${diagnostic.userMessageAr}${providerMessage}
+الحالة: ${diagnostic.status}
+قابل لإعادة المحاولة: ${diagnostic.retryable ? 'نعم' : 'لا'}`;
 }
 
 async function sendStatus(bot: TelegramBot, row: IntegrationRow, chatId: number, session: TelegramSession): Promise<void> {
-  const providers = await query<{ id: string; name: string; type: string; default_model: string; validation_status: string; validation_error_code: string | null }>(
-    `SELECT id, name, type, default_model, validation_status, validation_error_code
-     FROM providers WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC`,
-    [row.user_id]
-  );
-  const integrations = await query<{ type: string; validation_status: string }>(
-    `SELECT type, validation_status FROM integrations WHERE user_id = ? AND is_active = 1`,
-    [row.user_id]
-  );
+  const providers = await providersRepository.listForUser(row.user_id);
+  const integrations = await integrationsRepository.listForUser(row.user_id);
   const selected = providers.find((provider) => provider.id === session.providerId)
-    ?? providers.find((provider) => provider.validation_status === 'verified');
-  const verifiedProviders = providers.filter((provider) => provider.validation_status === 'verified').length;
+    ?? providers.find((provider) => provider.is_ready && provider.status === 'ready');
+  const readyProviders = providers.filter((provider) => provider.is_ready && provider.status === 'ready').length;
   const verifiedIntegrations = integrations.filter((integration) => integration.validation_status === 'verified');
   const integrationTypes = [...new Set(verifiedIntegrations.map((integration) => integration.type))];
   const text = [
     '📊 حالة Moataz AI',
     `الوضع: ${session.mode === 'agent' ? 'Agent — الأدوات مفعلة' : 'Chat — محادثة فقط'}`,
-    `المزوّد الحالي: ${selected ? `${selected.name} / ${selected.default_model}` : 'لا يوجد مزوّد متحقق منه'}`,
-    `المزوّدات: ${verifiedProviders} متحقق من ${providers.length}`,
+    `المزوّد الحالي: ${selected ? `${selected.name} / ${selected.selected_model ?? selected.default_model}` : 'لا يوجد مزوّد جاهز'}`,
+    `المزوّدات: ${readyProviders} جاهز من ${providers.length}`,
     `التكاملات المتحققة: ${integrationTypes.join('، ') || 'لا يوجد'}`,
     `البحث: ${integrationTypes.some((type) => type === 'brave_search' || type === 'tavily') ? 'جاهز' : 'يحتاج Brave أو Tavily'}`,
     `GitHub: ${integrationTypes.includes('github') ? 'جاهز' : 'غير مهيأ'}`,
     `Sandbox: ${integrationTypes.includes('sandbox') ? 'جاهز خارجيًا' : 'غير مهيأ'}`,
-    'نوع الخطة المجانية أو المدفوعة لا يمكن إثباته من المفتاح وحده؛ استخدم «فحص المزوّد» لرؤية الحالة الفعلية والرصيد/الفوترة.'
-  ].join('\n');
+    'نوع الخطة المجانية أو المدفوعة لا يُخمن؛ نتيجة الفحص تعرض فقط ما أثبته رد المزوّد.'
+  ].join('
+');
   await sendChunks(bot, chatId, text, true);
 }
 
 async function sendProviders(bot: TelegramBot, row: IntegrationRow, chatId: number, session: TelegramSession): Promise<void> {
-  const providers = await query<{ id: string; name: string; type: string; default_model: string; validation_status: string; validation_error_code: string | null }>(
-    `SELECT id, name, type, default_model, validation_status, validation_error_code
-     FROM providers WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC`,
-    [row.user_id]
-  );
-  const verified = providers.filter((provider) => provider.validation_status === 'verified');
-  if (verified.length === 0) {
-    const failed = providers.filter((provider) => provider.validation_status === 'failed');
-    const failures = failed.map((provider) => `• ${provider.name}: ${provider.validation_error_code ?? 'failed'}`).join('\n');
-    await bot.sendMessage(chatId, `لا يوجد مزوّد تم اختباره بنجاح.${failures ? `\n${failures}` : ''}`, {
+  const providers = await providersRepository.listForUser(row.user_id);
+  const ready = providers.filter((provider) => provider.is_ready && provider.status === 'ready' && provider.is_enabled);
+  if (ready.length === 0) {
+    const failures = providers.filter((provider) => provider.last_check_code)
+      .map((provider) => `• ${provider.name}: ${provider.last_check_code}`).join('
+');
+    await bot.sendMessage(chatId, `لا يوجد مزوّد اجتاز فحص inference حقيقي.${failures ? `
+${failures}` : ''}`, {
       reply_markup: { inline_keyboard: [[{ text: 'فتح إعدادات المزوّدات', url: pageUrl('providers') }]] }
     });
     return;
@@ -373,8 +329,8 @@ async function sendProviders(bot: TelegramBot, row: IntegrationRow, chatId: numb
   await bot.sendMessage(chatId, 'اختر المزوّد الذي سيستخدمه هذا Chat ID:', {
     reply_markup: {
       inline_keyboard: [
-        ...verified.slice(0, 20).map((provider) => [{
-          text: `${session.providerId === provider.id ? '✅ ' : ''}${provider.name} · ${provider.default_model}`,
+        ...ready.slice(0, 20).map((provider) => [{
+          text: `${session.providerId === provider.id ? '✅ ' : ''}${provider.name} · ${provider.selected_model ?? provider.default_model}`,
           callback_data: `provider:${provider.id}`
         }]),
         [{ text: 'فتح صفحة المزوّدات', url: pageUrl('providers') }],
@@ -387,30 +343,25 @@ async function sendProviders(bot: TelegramBot, row: IntegrationRow, chatId: numb
 async function diagnoseProvider(bot: TelegramBot, row: IntegrationRow, chatId: number, session: TelegramSession): Promise<void> {
   const providerRow = await providerForTelegram(row.user_id, parseMeta(row.meta), session.providerId);
   if (!providerRow) {
-    await bot.sendMessage(chatId, 'لا يوجد مزوّد متحقق منه. افتح إعدادات المزوّدات، احفظ المفتاح ثم اختبر الاتصال.', {
+    await bot.sendMessage(chatId, 'لا يوجد مزوّد جاهز. احفظه كمسودة، اختر نموذجًا محددًا، ثم نفذ إعادة الفحص.', {
       reply_markup: { inline_keyboard: [[{ text: 'إعداد المزوّدات', url: pageUrl('providers') }]] }
     });
     return;
   }
   await bot.sendChatAction(chatId, 'typing');
   try {
-    const provider = providerObject(providerRow);
-    const completion = await testProviderConnection(provider, providerRow.default_model);
-    let modelStatus = 'غير مدعوم أو غير معلن';
-    try {
-      const models = await listProviderModels(provider);
-      modelStatus = models.supported ? `${models.models.length} نموذجًا متاحًا عبر /models` : 'المزوّد لا يوفر قائمة نماذج عامة';
-    } catch (error) {
-      modelStatus = `تعذر تحميل قائمة النماذج: ${failedProviderDiagnostic(providerRow.type, error).errorStage ?? 'unknown'}`;
-    }
+    const result = await providersService.retest(row.user_id, providerRow.id);
     await sendChunks(bot, chatId, [
-      `✅ المفتاح يعمل فعليًا مع ${providerRow.name}`,
-      `النموذج: ${completion.model}`,
-      `رد الاختبار: ${completion.message}`,
-      `قائمة النماذج: ${modelStatus}`,
-      'الرصيد/الفوترة: الطلب نجح الآن.',
-      'الخطة: غير معلنة من واجهة المزوّد؛ لا يمكن وصف المفتاح بأنه مجاني أو مدفوع دون دليل من المزوّد.'
-    ].join('\n'), true);
+      `✅ ${result.provider.name} جاهز`,
+      `النموذج: ${result.provider.selected_model ?? result.provider.default_model}`,
+      `الحالة: ${result.diagnostic.status}`,
+      `الوصول: ${String(result.diagnostic.providerReachable)}`,
+      `صلاحية المفتاح: ${String(result.diagnostic.keyValid)}`,
+      `النموذج متاح: ${String(result.diagnostic.modelAvailable)}`,
+      `الزمن: ${result.diagnostic.latencyMs ?? 0}ms`,
+      result.diagnostic.userMessageAr
+    ].join('
+'), true);
   } catch (error) {
     await sendChunks(bot, chatId, explicitProviderError(providerRow.type, error), true);
   }
@@ -485,7 +436,7 @@ async function processAiMessage(bot: TelegramBot, row: IntegrationRow, message: 
   ];
 
   await bot.sendChatAction(message.chat.id, 'typing');
-  let step = await completeAgentStep(provider, messages, providerRow.default_model, availableTools);
+  let step = await completeAgentStep(provider, messages, providerRow.selected_model ?? providerRow.default_model, availableTools);
   for (let iteration = 0; session.mode === 'agent' && iteration < config.maxToolIterations; iteration += 1) {
     const requested = step.toolCalls.length > 0 ? step.toolCalls : (() => {
       const legacy = parseLegacyToolCall(step.text);
@@ -521,7 +472,7 @@ async function processAiMessage(bot: TelegramBot, row: IntegrationRow, message: 
         messages.push({ role: 'tool', toolCallId: call.id, name: call.name, content: JSON.stringify({ status: 'failed', error: code }) });
       }
     }
-    step = await completeAgentStep(provider, messages, providerRow.default_model, availableTools);
+    step = await completeAgentStep(provider, messages, providerRow.selected_model ?? providerRow.default_model, availableTools);
   }
 
   const answer = step.text.trim();
@@ -648,19 +599,15 @@ async function handleCallback(bot: TelegramBot, row: IntegrationRow, queryValue:
 
   if (data.startsWith('provider:')) {
     const providerId = data.slice('provider:'.length);
-    const provider = await get<ProviderRow>(
-      `SELECT id, type, api_key_enc, base_url, default_model, name FROM providers
-       WHERE id = ? AND user_id = ? AND is_active = 1 AND validation_status = 'verified'`,
-      [providerId, row.user_id]
-    );
-    if (!provider) {
-      await bot.sendMessage(message.chat.id, 'المزوّد غير متاح أو لم ينجح اختباره.');
+    const provider = await providersRepository.findOwned(row.user_id, providerId);
+    if (!provider?.is_ready || provider.status !== 'ready' || !provider.is_enabled) {
+      await bot.sendMessage(message.chat.id, 'المزوّد غير جاهز أو لم ينجح فحص inference الحقيقي.');
       return;
     }
     session.providerId = provider.id;
     session.history = [];
     await persistSession(row, chatId, session);
-    await bot.sendMessage(message.chat.id, `✅ تم اختيار ${provider.name}\nالنموذج: ${provider.default_model}`, { reply_markup: mainKeyboard() });
+    await bot.sendMessage(message.chat.id, `✅ تم اختيار ${provider.name}\nالنموذج: ${provider.selected_model ?? provider.default_model}`, { reply_markup: mainKeyboard() });
     return;
   }
 
@@ -835,7 +782,7 @@ async function configureBot(row: IntegrationRow, token: string): Promise<Configu
 }
 
 export async function startTelegramPolling(): Promise<TelegramController> {
-  const rows = await query<IntegrationRow>("SELECT id, user_id, token_enc, meta FROM integrations WHERE type = ? AND is_active = 1 AND validation_status = 'verified'", ['telegram']);
+  const rows = await integrationsRepository.listAllVerifiedByType('telegram');
   const uniqueTokens = new Set<string>();
   const configured: Array<Promise<ConfiguredBot | undefined>> = [];
   for (const row of rows) {
