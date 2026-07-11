@@ -1,8 +1,6 @@
 import { AppError } from './errors.js';
 import type {
   AgentStep,
-  LLMImage,
-  LLMToolCall,
   LLMToolSpec,
   Msg
 } from './llm-types.js';
