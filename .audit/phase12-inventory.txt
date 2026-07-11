@@ -68,6 +68,7 @@
 ./server/src/providers.test.ts
 ./server/src/providers.ts
 ./server/src/providers/base-url.ts
+./server/src/providers/http.ts
 ./server/src/providers/registry.ts
 ./server/src/providers/types.ts
 ./server/src/redaction.test.ts
@@ -94,6 +95,8 @@
 ./workspace/.gitkeep
 
 # Database imports and SQL sites
+server/src/providers/http.ts:40:    const value = headers.get(name)?.trim();
+server/src/providers/http.ts:103:    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
 server/src/providers/registry.ts:104:  const definition = registry.get(id);
 server/src/tools.ts:357:      return { url: response.url, status: response.status, contentType: response.headers.get('content-type'), response: payload };
 server/src/tools.ts:368:      const contentType = response.headers.get('content-type') ?? '';
@@ -229,6 +232,14 @@ server/src/providers/types.ts:116:  upstreamRequestId?: string;
 server/src/providers/types.ts:138:  upstreamRequestId?: string;
 server/src/providers/types.ts:145:  | { type: 'done'; model: string; upstreamRequestId?: string };
 server/src/providers/types.ts:161:  streamChatCompletion?(input: ProviderChatInput): AsyncIterable<ProviderStreamEvent>;
+server/src/providers/http.ts:9:  readonly upstreamRequestId?: string;
+server/src/providers/http.ts:16:    upstreamRequestId?: string;
+server/src/providers/http.ts:24:    this.upstreamRequestId = options.upstreamRequestId;
+server/src/providers/http.ts:35:  upstreamRequestId?: string;
+server/src/providers/http.ts:114:            upstreamRequestId: requestId(response.headers),
+server/src/providers/http.ts:122:    const upstreamRequestId = requestId(response.headers);
+server/src/providers/http.ts:128:        upstreamRequestId
+server/src/providers/http.ts:137:      ...(upstreamRequestId ? { upstreamRequestId } : {})
 server/src/providers/base-url.ts:109:export function providerCatalogEntry(definition: ProviderDefinition) {
 server/src/providers/registry.ts:19:    streaming: true,
 server/src/providers/registry.ts:55:    capabilities: { modelDiscovery: false, streaming: true, tools: true, vision: true, embeddings: false, responsesApi: false },
