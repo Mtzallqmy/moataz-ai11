@@ -1,0 +1,310 @@
+
+> moataz-ai@2.0.0 typecheck
+> tsc -p server/tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit
+
+node_modules/drizzle-orm/gel-core/columns/date-duration.d.ts(1,35): error TS2307: Cannot find module 'gel' or its corresponding type declarations.
+node_modules/drizzle-orm/gel-core/columns/duration.d.ts(1,31): error TS2307: Cannot find module 'gel' or its corresponding type declarations.
+node_modules/drizzle-orm/gel-core/columns/localdate.d.ts(1,32): error TS2307: Cannot find module 'gel' or its corresponding type declarations.
+node_modules/drizzle-orm/gel-core/columns/localtime.d.ts(1,32): error TS2307: Cannot find module 'gel' or its corresponding type declarations.
+node_modules/drizzle-orm/gel-core/columns/relative-duration.d.ts(1,39): error TS2307: Cannot find module 'gel' or its corresponding type declarations.
+node_modules/drizzle-orm/gel-core/columns/timestamp.d.ts(1,36): error TS2307: Cannot find module 'gel' or its corresponding type declarations.
+node_modules/drizzle-orm/gel-core/policies.d.ts(13,22): error TS2420: Class 'GelPolicy' incorrectly implements interface 'GelPolicyConfig'.
+  Types of property 'as' are incompatible.
+    Type '"permissive" | "restrictive" | undefined' is not assignable to type '"permissive" | "restrictive"'.
+      Type 'undefined' is not assignable to type '"permissive" | "restrictive"'.
+node_modules/drizzle-orm/gel-core/query-builders/query.d.ts(23,22): error TS2420: Class 'GelRelationalQuery<TResult>' incorrectly implements interface 'SQLWrapper'.
+  Property 'getSQL' is missing in type 'GelRelationalQuery<TResult>' but required in type 'SQLWrapper'.
+node_modules/drizzle-orm/gel-core/roles.d.ts(7,22): error TS2559: Type 'GelRole' has no properties in common with type 'GelRoleConfig'.
+node_modules/drizzle-orm/mysql-core/db.d.ts(1,38): error TS2307: Cannot find module 'mysql2/promise' or its corresponding type declarations.
+node_modules/drizzle-orm/mysql-core/query-builders/delete.d.ts(36,22): error TS2420: Class 'MySqlDeleteBase<TTable, TQueryResult, TPreparedQueryHKT, TDynamic, TExcludedMethods>' incorrectly implements interface 'SQLWrapper'.
+  Property 'getSQL' is missing in type 'MySqlDeleteBase<TTable, TQueryResult, TPreparedQueryHKT, TDynamic, TExcludedMethods>' but required in type 'SQLWrapper'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(294,244): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "toSQL" | "$dynamic" | "having" | ... 8 more ... | "$withCache"'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(320,247): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "toSQL" | "$dynamic" | "having" | ... 8 more ... | "$withCache"'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(346,248): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "toSQL" | "$dynamic" | "having" | ... 8 more ... | "$withCache"'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(387,251): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "toSQL" | "$dynamic" | "having" | ... 8 more ... | "$withCache"'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(413,245): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "toSQL" | "$dynamic" | "having" | ... 8 more ... | "$withCache"'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(454,248): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "toSQL" | "$dynamic" | "having" | ... 8 more ... | "$withCache"'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.d.ts(611,22): error TS2515: Non-abstract class 'MySqlSelectBase<TTableName, TSelection, TSelectMode, TPreparedQueryHKT, TNullabilityMap, TDynamic, TExcludedMethods, TResult, TSelectedFields>' does not implement inherited abstract member getSQL from class 'MySqlSelectQueryBuilderBase<MySqlSelectHKT, TTableName, TSelection, TSelectMode, TPreparedQueryHKT, TNullabilityMap, TDynamic, TExcludedMethods, TResult, TSelectedFields>'.
+node_modules/drizzle-orm/mysql-core/query-builders/select.types.d.ts(138,1149): error TS2344: Type 'MySqlSetOperatorExcludedMethods' does not satisfy the constraint '"offset" | "iterator" | "limit" | "catch" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "execute" | "leftJoin" | "rightJoin" | "innerJoin" | ... 14 more ... | "$withCache"'.
+  Type '"session"' is not assignable to type '"offset" | "iterator" | "limit" | "catch" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "execute" | "leftJoin" | "rightJoin" | "innerJoin" | ... 14 more ... | "$withCache"'.
+node_modules/drizzle-orm/pg-core/policies.d.ts(13,22): error TS2420: Class 'PgPolicy' incorrectly implements interface 'PgPolicyConfig'.
+  Types of property 'as' are incompatible.
+    Type '"permissive" | "restrictive" | undefined' is not assignable to type '"permissive" | "restrictive"'.
+      Type 'undefined' is not assignable to type '"permissive" | "restrictive"'.
+node_modules/drizzle-orm/pg-core/query-builders/query.d.ts(23,22): error TS2420: Class 'PgRelationalQuery<TResult>' incorrectly implements interface 'SQLWrapper'.
+  Property 'getSQL' is missing in type 'PgRelationalQuery<TResult>' but required in type 'SQLWrapper'.
+node_modules/drizzle-orm/pg-core/roles.d.ts(7,22): error TS2559: Type 'PgRole' has no properties in common with type 'PgRoleConfig'.
+node_modules/drizzle-orm/singlestore-core/columns/bigint.d.ts(13,22): error TS2515: Non-abstract class 'SingleStoreBigInt53Builder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilderWithAutoIncrement<T, { unsigned: boolean; }, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/bigint.d.ts(35,22): error TS2515: Non-abstract class 'SingleStoreBigInt64Builder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilderWithAutoIncrement<T, { unsigned: boolean; }, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/binary.d.ts(14,22): error TS2515: Non-abstract class 'SingleStoreBinaryBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, SingleStoreBinaryConfig, object, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/boolean.d.ts(14,22): error TS2515: Non-abstract class 'SingleStoreBooleanBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, object, object, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/char.d.ts(16,22): error TS2515: Non-abstract class 'SingleStoreCharBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, SingleStoreCharConfig<T["enumValues"], T["length"]>, { length: T["length"]; }, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/custom.d.ts(24,22): error TS2515: Non-abstract class 'SingleStoreCustomColumnBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, { fieldConfig: Record<string, any> | undefined; customTypeParams: CustomTypeParams<any>; }, { singlestoreColumnBuilderBrand: "SingleStoreCustomColumnBuilderBrand"; }, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/date.d.ts(16,22): error TS2515: Non-abstract class 'SingleStoreDateBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, object, object, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/date.d.ts(37,22): error TS2515: Non-abstract class 'SingleStoreDateStringBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, object, object, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/datetime.d.ts(16,22): error TS2515: Non-abstract class 'SingleStoreDateTimeBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, SingleStoreDatetimeConfig<"string" | "date">, object, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/datetime.d.ts(38,22): error TS2515: Non-abstract class 'SingleStoreDateTimeStringBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, SingleStoreDatetimeConfig<"string" | "date">, object, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/decimal.d.ts(15,22): error TS2515: Non-abstract class 'SingleStoreDecimalBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilderWithAutoIncrement<T, SingleStoreDecimalConfig<"string" | "number" | "bigint">, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/decimal.d.ts(36,22): error TS2515: Non-abstract class 'SingleStoreDecimalNumberBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilderWithAutoIncrement<T, SingleStoreDecimalConfig<"string" | "number" | "bigint">, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/decimal.d.ts(58,22): error TS2515: Non-abstract class 'SingleStoreDecimalBigIntBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilderWithAutoIncrement<T, SingleStoreDecimalConfig<"string" | "number" | "bigint">, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/double.d.ts(14,22): error TS2515: Non-abstract class 'SingleStoreDoubleBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilderWithAutoIncrement<T, SingleStoreDoubleConfig, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/enum.d.ts(19,5): error TS2416: Property 'generatedAlwaysAs' in type 'SingleStoreEnumColumnBuilder<T>' is not assignable to the same property in base type 'SingleStoreColumnBuilder<T, { enumValues: T["enumValues"]; }, object, ColumnBuilderExtraConfig>'.
+  Type '(as: SQL<unknown> | (() => SQL<unknown>) | T["data"], config?: Partial<GeneratedColumnConfig<unknown>> | undefined) => HasGenerated<this, {}>' is not assignable to type '(as: SQL<unknown> | (() => SQL<unknown>) | T["data"], config?: Partial<GeneratedColumnConfig<unknown>> | undefined) => HasGenerated<this, { type: "always"; }>'.
+    Type 'HasGenerated<this, {}>' is not assignable to type 'HasGenerated<this, { type: "always"; }>'.
+      Type 'HasGenerated<this, {}>' is not assignable to type '{ _: { hasDefault: true; generated: { type: "always"; }; }; }'.
+        The types of '_.generated' are incompatible between these types.
+          Property 'type' is missing in type '{}' but required in type '{ type: "always"; }'.
+node_modules/drizzle-orm/singlestore-core/columns/float.d.ts(14,22): error TS2515: Non-abstract class 'SingleStoreFloatBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilderWithAutoIncrement<T, SingleStoreFloatConfig, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/int.d.ts(14,22): error TS2515: Non-abstract class 'SingleStoreIntBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilderWithAutoIncrement<T, SingleStoreIntConfig, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/json.d.ts(14,22): error TS2515: Non-abstract class 'SingleStoreJsonBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, object, object, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/mediumint.d.ts(15,22): error TS2515: Non-abstract class 'SingleStoreMediumIntBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilderWithAutoIncrement<T, SingleStoreIntConfig, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/real.d.ts(14,22): error TS2515: Non-abstract class 'SingleStoreRealBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilderWithAutoIncrement<T, SingleStoreRealConfig, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/serial.d.ts(14,22): error TS2515: Non-abstract class 'SingleStoreSerialBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilderWithAutoIncrement<T, object, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/smallint.d.ts(15,22): error TS2515: Non-abstract class 'SingleStoreSmallIntBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilderWithAutoIncrement<T, SingleStoreIntConfig, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/text.d.ts(16,22): error TS2515: Non-abstract class 'SingleStoreTextBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, { textType: SingleStoreTextColumnType; enumValues: T["enumValues"]; }, object, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/time.d.ts(14,22): error TS2515: Non-abstract class 'SingleStoreTimeBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, object, object, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/timestamp.d.ts(15,22): error TS2515: Non-abstract class 'SingleStoreTimestampBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreDateColumnBaseBuilder<T, SingleStoreTimestampConfig<"string" | "date">, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/timestamp.d.ts(35,22): error TS2515: Non-abstract class 'SingleStoreTimestampStringBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreDateColumnBaseBuilder<T, SingleStoreTimestampConfig<"string" | "date">, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/tinyint.d.ts(15,22): error TS2515: Non-abstract class 'SingleStoreTinyIntBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilderWithAutoIncrement<T, SingleStoreIntConfig, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/varbinary.d.ts(14,22): error TS2515: Non-abstract class 'SingleStoreVarBinaryBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, SingleStoreVarbinaryOptions, object, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/varchar.d.ts(16,22): error TS2515: Non-abstract class 'SingleStoreVarCharBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, SingleStoreVarCharConfig<T["enumValues"], T["length"]>, { length: T["length"]; }, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/vector.d.ts(13,22): error TS2515: Non-abstract class 'SingleStoreVectorBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, SingleStoreVectorConfig, object, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/columns/year.d.ts(14,22): error TS2515: Non-abstract class 'SingleStoreYearBuilder<T>' does not implement inherited abstract member generatedAlwaysAs from class 'SingleStoreColumnBuilder<T, object, object, ColumnBuilderExtraConfig>'.
+node_modules/drizzle-orm/singlestore-core/db.d.ts(1,38): error TS2307: Cannot find module 'mysql2/promise' or its corresponding type declarations.
+node_modules/drizzle-orm/singlestore-core/query-builders/delete.d.ts(36,22): error TS2420: Class 'SingleStoreDeleteBase<TTable, TQueryResult, TPreparedQueryHKT, TDynamic, TExcludedMethods>' incorrectly implements interface 'SQLWrapper'.
+  Property 'getSQL' is missing in type 'SingleStoreDeleteBase<TTable, TQueryResult, TPreparedQueryHKT, TDynamic, TExcludedMethods>' but required in type 'SQLWrapper'.
+node_modules/drizzle-orm/singlestore-core/query-builders/select.d.ts(268,262): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "fullJoin" | "toSQL" | "$dynamic" | ... 7 more ... | "minus"'.
+node_modules/drizzle-orm/singlestore-core/query-builders/select.d.ts(294,265): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "fullJoin" | "toSQL" | "$dynamic" | ... 7 more ... | "minus"'.
+node_modules/drizzle-orm/singlestore-core/query-builders/select.d.ts(320,266): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "fullJoin" | "toSQL" | "$dynamic" | ... 7 more ... | "minus"'.
+node_modules/drizzle-orm/singlestore-core/query-builders/select.d.ts(346,263): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "fullJoin" | "toSQL" | "$dynamic" | ... 7 more ... | "minus"'.
+node_modules/drizzle-orm/singlestore-core/query-builders/select.d.ts(370,262): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"session"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "fullJoin" | "toSQL" | "$dynamic" | ... 7 more ... | "minus"'.
+node_modules/drizzle-orm/singlestore-core/query-builders/select.d.ts(520,22): error TS2515: Non-abstract class 'SingleStoreSelectBase<TTableName, TSelection, TSelectMode, TPreparedQueryHKT, TNullabilityMap, TDynamic, TExcludedMethods, TResult, TSelectedFields>' does not implement inherited abstract member getSQL from class 'SingleStoreSelectQueryBuilderBase<SingleStoreSelectHKT, TTableName, TSelection, TSelectMode, TPreparedQueryHKT, TNullabilityMap, TDynamic, TExcludedMethods, TResult, TSelectedFields>'.
+node_modules/drizzle-orm/singlestore-core/query-builders/select.types.d.ts(130,1185): error TS2344: Type 'SingleStoreSetOperatorExcludedMethods' does not satisfy the constraint '"offset" | "iterator" | "limit" | "catch" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "execute" | "leftJoin" | "rightJoin" | "innerJoin" | ... 14 more ... | "minus"'.
+  Type '"session"' is not assignable to type '"offset" | "iterator" | "limit" | "catch" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "for" | "where" | "orderBy" | "execute" | "leftJoin" | "rightJoin" | "innerJoin" | ... 14 more ... | "minus"'.
+node_modules/drizzle-orm/singlestore/driver.d.ts(1,100): error TS2307: Cannot find module 'mysql2' or its corresponding type declarations.
+node_modules/drizzle-orm/singlestore/driver.d.ts(2,39): error TS2307: Cannot find module 'mysql2/promise' or its corresponding type declarations.
+node_modules/drizzle-orm/singlestore/session.d.ts(1,94): error TS2307: Cannot find module 'mysql2/promise' or its corresponding type declarations.
+node_modules/drizzle-orm/sqlite-core/query-builders/query.d.ts(25,22): error TS2420: Class 'SQLiteRelationalQuery<TType, TResult>' incorrectly implements interface 'SQLWrapper'.
+  Property 'getSQL' is missing in type 'SQLiteRelationalQuery<TType, TResult>' but required in type 'SQLWrapper'.
+node_modules/drizzle-orm/sqlite-core/query-builders/select.d.ts(233,247): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"config"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "fullJoin" | "toSQL" | "$dynamic" | "having" | "groupBy" | "crossJoin" | "unionAll"'.
+node_modules/drizzle-orm/sqlite-core/query-builders/select.d.ts(259,250): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"config"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "fullJoin" | "toSQL" | "$dynamic" | "having" | "groupBy" | "crossJoin" | "unionAll"'.
+node_modules/drizzle-orm/sqlite-core/query-builders/select.d.ts(285,251): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"config"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "fullJoin" | "toSQL" | "$dynamic" | "having" | "groupBy" | "crossJoin" | "unionAll"'.
+node_modules/drizzle-orm/sqlite-core/query-builders/select.d.ts(311,248): error TS2344: Type 'string' does not satisfy the constraint 'keyof this & string'.
+  Type 'string' is not assignable to type 'keyof this & string'.
+    Type 'string' is not assignable to type 'keyof this'.
+      Type '"config"' is not assignable to type '"offset" | "limit" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "where" | "orderBy" | "leftJoin" | "rightJoin" | "innerJoin" | "fullJoin" | "toSQL" | "$dynamic" | "having" | "groupBy" | "crossJoin" | "unionAll"'.
+node_modules/drizzle-orm/sqlite-core/query-builders/select.d.ts(452,22): error TS2515: Non-abstract class 'SQLiteSelectBase<TTableName, TResultType, TRunResult, TSelection, TSelectMode, TNullabilityMap, TDynamic, TExcludedMethods, TResult, TSelectedFields>' does not implement inherited abstract member getSQL from class 'SQLiteSelectQueryBuilderBase<SQLiteSelectHKT, TTableName, TResultType, TRunResult, TSelection, TSelectMode, TNullabilityMap, TDynamic, TExcludedMethods, TResult, TSelectedFields>'.
+node_modules/drizzle-orm/sqlite-core/query-builders/select.types.d.ts(123,1157): error TS2344: Type 'SQLiteSetOperatorExcludedMethods' does not satisfy the constraint '"values" | "all" | "offset" | "get" | "limit" | "catch" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "where" | "orderBy" | "execute" | "leftJoin" | "rightJoin" | ... 12 more ... | "run"'.
+  Type '"config"' is not assignable to type '"values" | "all" | "offset" | "get" | "limit" | "catch" | "_" | "getSQL" | "as" | "union" | "intersect" | "except" | "where" | "orderBy" | "execute" | "leftJoin" | "rightJoin" | ... 12 more ... | "run"'.
+server/src/app.ts(200,40): error TS2379: Argument of type '{ code: string; status: number; requestId: string | undefined; }' is not assignable to parameter of type '{ code: string; status: number; requestId?: string; details?: unknown; fallbackMessage?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'requestId' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/app.ts(219,42): error TS2379: Argument of type '{ code: string; status: number; requestId: string | undefined; }' is not assignable to parameter of type '{ code: string; status: number; requestId?: string; details?: unknown; fallbackMessage?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'requestId' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/app.ts(224,51): error TS2379: Argument of type '{ code: string; status: number; requestId: string | undefined; details: unknown; fallbackMessage: string; }' is not assignable to parameter of type '{ code: string; status: number; requestId?: string; details?: unknown; fallbackMessage?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'requestId' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/app.ts(237,40): error TS2379: Argument of type '{ code: string; status: number; requestId: string | undefined; }' is not assignable to parameter of type '{ code: string; status: number; requestId?: string; details?: unknown; fallbackMessage?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'requestId' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/database/client.ts(77,42): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Object literal may only specify known properties, and 'query_timeout' does not exist in type 'QueryConfig<any[]>'.
+server/src/llm.ts(83,47): error TS2379: Argument of type '{ config: ProviderRuntimeConfig; messages: readonly Msg[]; tools: readonly LLMToolSpec[]; signal: AbortSignal | undefined; }' is not assignable to parameter of type 'ProviderChatInput' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'signal' are incompatible.
+    Type 'AbortSignal | undefined' is not assignable to type 'AbortSignal'.
+      Type 'undefined' is not assignable to type 'AbortSignal'.
+server/src/llm.ts(112,41): error TS2379: Argument of type '{ config: ProviderRuntimeConfig; messages: readonly Msg[]; tools: readonly LLMToolSpec[]; signal: AbortSignal | undefined; }' is not assignable to parameter of type 'ProviderChatInput' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'signal' are incompatible.
+    Type 'AbortSignal | undefined' is not assignable to type 'AbortSignal'.
+      Type 'undefined' is not assignable to type 'AbortSignal'.
+server/src/providers/adapters/gemini.adapter.ts(66,45): error TS2379: Argument of type '{ url: string; method: "GET"; headers: { Accept: string; }; signal: AbortSignal | undefined; }' is not assignable to parameter of type '{ url: string; method: "GET" | "POST"; headers: Record<string, string>; body?: unknown; signal?: AbortSignal; timeoutMs?: number; maxBytes?: number; allowPrivate?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'signal' are incompatible.
+    Type 'AbortSignal | undefined' is not assignable to type 'AbortSignal'.
+      Type 'undefined' is not assignable to type 'AbortSignal'.
+server/src/providers/adapters/gemini.adapter.ts(106,80): error TS2379: Argument of type '{ signal: AbortSignal | undefined; }' is not assignable to parameter of type 'SingleRequestOptions' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'signal' are incompatible.
+    Type 'AbortSignal | undefined' is not assignable to type 'AbortSignal'.
+      Type 'undefined' is not assignable to type 'AbortSignal'.
+server/src/providers/adapters/openai-compatible.adapter.ts(126,23): error TS18046: 'list' is of type 'unknown'.
+server/src/providers/adapters/openai-compatible.adapter.ts(218,49): error TS2379: Argument of type '{ url: string; method: "GET"; headers: Record<string, string>; signal: AbortSignal | undefined; timeoutMs: number; allowPrivate: boolean; }' is not assignable to parameter of type '{ url: string; method: "GET" | "POST"; headers: Record<string, string>; body?: unknown; signal?: AbortSignal; timeoutMs?: number; maxBytes?: number; allowPrivate?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'signal' are incompatible.
+    Type 'AbortSignal | undefined' is not assignable to type 'AbortSignal'.
+      Type 'undefined' is not assignable to type 'AbortSignal'.
+server/src/providers/adapters/openai-compatible.adapter.ts(254,45): error TS2379: Argument of type '{ url: string; method: "POST"; headers: Record<string, string>; body: { tools?: { type: string; function: { name: string; description: string; parameters: Record<string, unknown>; }; }[]; tool_choice?: string; ... 4 more ...; stream: boolean; }; signal: AbortSignal | undefined; allowPrivate: boolean; }' is not assignable to parameter of type '{ url: string; method: "GET" | "POST"; headers: Record<string, string>; body?: unknown; signal?: AbortSignal; timeoutMs?: number; maxBytes?: number; allowPrivate?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'signal' are incompatible.
+    Type 'AbortSignal | undefined' is not assignable to type 'AbortSignal'.
+      Type 'undefined' is not assignable to type 'AbortSignal'.
+server/src/providers/adapters/openai-compatible.adapter.ts(296,56): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(input: string | Request | URL, init?: RequestInit | undefined): Promise<Response>', gave the following error.
+    Argument of type '{ method: string; headers: Record<string, string>; body: string; signal: AbortSignal | undefined; redirect: "error"; }' is not assignable to parameter of type 'RequestInit' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+      Types of property 'signal' are incompatible.
+        Type 'AbortSignal | undefined' is not assignable to type 'AbortSignal | null'.
+          Type 'undefined' is not assignable to type 'AbortSignal | null'.
+  Overload 2 of 2, '(input: RequestInfo | URL, init?: RequestInit | undefined): Promise<Response>', gave the following error.
+    Argument of type '{ method: string; headers: Record<string, string>; body: string; signal: AbortSignal | undefined; redirect: "error"; }' is not assignable to parameter of type 'RequestInit' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+      Types of property 'signal' are incompatible.
+        Type 'AbortSignal | undefined' is not assignable to type 'AbortSignal | null'.
+          Type 'undefined' is not assignable to type 'AbortSignal | null'.
+server/src/providers/diagnostics.ts(59,5): error TS2375: Type '{ httpStatus: number | undefined; providerCode: string | undefined; message: string; endpoint: string | undefined; upstreamRequestId: string | undefined; causeCode: string | undefined; }' is not assignable to type '{ httpStatus?: number; providerCode?: string; message: string; endpoint?: string; upstreamRequestId?: string; causeCode?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'httpStatus' are incompatible.
+    Type 'number | undefined' is not assignable to type 'number'.
+      Type 'undefined' is not assignable to type 'number'.
+server/src/providers/diagnostics.ts(73,3): error TS2375: Type '{ httpStatus: number | undefined; providerCode: string | undefined; message: string; endpoint: string | undefined; upstreamRequestId: string | undefined; causeCode: string | undefined; }' is not assignable to type '{ httpStatus?: number; providerCode?: string; message: string; endpoint?: string; upstreamRequestId?: string; causeCode?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'httpStatus' are incompatible.
+    Type 'number | undefined' is not assignable to type 'number'.
+      Type 'undefined' is not assignable to type 'number'.
+server/src/providers/diagnostics.ts(213,7): error TS2367: This comparison appears to be unintentional because the types '"timeout" | "invalid_request" | "forbidden" | "invalid_api_key" | "invalid_base_url" | "endpoint_not_found" | "model_not_found" | "model_unavailable" | "provider_unavailable" | ... 8 more ... | "unknown_error"' and '"ready"' have no overlap.
+server/src/providers/http.ts(21,5): error TS2412: Type 'number | undefined' is not assignable to type 'number' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the type of the target.
+  Type 'undefined' is not assignable to type 'number'.
+server/src/providers/http.ts(23,5): error TS2412: Type 'string | undefined' is not assignable to type 'string' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the type of the target.
+  Type 'undefined' is not assignable to type 'string'.
+server/src/providers/http.ts(24,5): error TS2412: Type 'string | undefined' is not assignable to type 'string' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the type of the target.
+  Type 'undefined' is not assignable to type 'string'.
+server/src/providers/http.ts(25,5): error TS2412: Type 'string | undefined' is not assignable to type 'string' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the type of the target.
+  Type 'undefined' is not assignable to type 'string'.
+server/src/providers/http.ts(110,80): error TS2379: Argument of type '{ status: number; payload: string; endpoint: string; upstreamRequestId: string | undefined; causeCode: string; }' is not assignable to parameter of type '{ status?: number; payload?: unknown; endpoint?: string; upstreamRequestId?: string; causeCode?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'upstreamRequestId' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/providers/http.ts(124,104): error TS2379: Argument of type '{ status: number; payload: unknown; endpoint: string; upstreamRequestId: string | undefined; }' is not assignable to parameter of type '{ status?: number; payload?: unknown; endpoint?: string; upstreamRequestId?: string; causeCode?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'upstreamRequestId' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/providers/service.ts(38,53): error TS2379: Argument of type '{ endpoint: string | undefined; providerReachableHint: null; keyValidHint: null; }' is not assignable to parameter of type 'DiagnosticContext' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'endpoint' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/providers/service.ts(82,54): error TS2379: Argument of type '{ signal: AbortSignal | undefined; }' is not assignable to parameter of type '{ signal?: AbortSignal; force?: boolean; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'signal' are incompatible.
+    Type 'AbortSignal | undefined' is not assignable to type 'AbortSignal'.
+      Type 'undefined' is not assignable to type 'AbortSignal'.
+server/src/providers/service.ts(84,62): error TS2379: Argument of type '{ requestId: string | undefined; endpoint: string | undefined; model: string; }' is not assignable to parameter of type 'DiagnosticContext' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'endpoint' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/providers/service.ts(105,55): error TS2379: Argument of type '{ config: ProviderRuntimeConfig; messages: ({ role: "system"; content: string; } | { role: "user"; content: string; })[]; maxOutputTokens: number; temperature: number; signal: AbortSignal | undefined; }' is not assignable to parameter of type 'ProviderChatInput' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'signal' are incompatible.
+    Type 'AbortSignal | undefined' is not assignable to type 'AbortSignal'.
+      Type 'undefined' is not assignable to type 'AbortSignal'.
+server/src/providers/service.ts(123,48): error TS2379: Argument of type '{ endpoint: string | undefined; model: string; latencyMs: number; requestId: string | undefined; upstreamRequestId: string | undefined; discovery: ModelDiscoveryResult; }' is not assignable to parameter of type '{ endpoint?: string; model: string; latencyMs: number; requestId?: string; upstreamRequestId?: string; discovery?: ModelDiscoveryResult; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'endpoint' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/providers/service.ts(138,53): error TS2379: Argument of type '{ requestId: string | undefined; endpoint: string | undefined; model: string; discovery: ModelDiscoveryResult; keyValidHint: true | null; providerReachableHint: true | null; latencyMs: number; }' is not assignable to parameter of type 'DiagnosticContext' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'endpoint' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/providers/service.ts(165,53): error TS2379: Argument of type '{ endpoint: string | undefined; model: string; }' is not assignable to parameter of type 'DiagnosticContext' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'endpoint' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/providers/service.ts(181,64): error TS2379: Argument of type '{ endpoint: string | undefined; model: string; }' is not assignable to parameter of type 'DiagnosticContext' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'endpoint' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/routes/chats.routes.ts(199,9): error TS2322: Type '"agent" | "chat" | "multi-agent" | undefined' is not assignable to type 'ChatMode'.
+  Type 'undefined' is not assignable to type 'ChatMode'.
+server/src/routes/chats.routes.ts(294,55): error TS2345: Argument of type 'string[] | undefined' is not assignable to parameter of type 'readonly string[]'.
+  Type 'undefined' is not assignable to type 'readonly string[]'.
+server/src/routes/chats.routes.ts(307,9): error TS2322: Type 'string[] | undefined' is not assignable to type 'readonly string[]'.
+  Type 'undefined' is not assignable to type 'readonly string[]'.
+server/src/routes/chats.routes.ts(389,42): error TS2379: Argument of type '{ runId: string; userId: string; assistantMessage: { id: string; chatId: string; content: string; toolCalls: ToolCallRecord[]; idempotencyKey: string; }; summary: { mode: ChatMode; toolCalls: number; }; inputTokens: number | undefined; outputTokens: number | undefined; totalTokens: number | undefined; }' is not assignable to parameter of type '{ runId: string; userId: string; assistantMessage: { id: string; chatId: string; content: string; toolCalls: unknown[]; idempotencyKey: string; }; summary: Record<string, unknown>; inputTokens?: number; outputTokens?: number; totalTokens?: number; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'inputTokens' are incompatible.
+    Type 'number | undefined' is not assignable to type 'number'.
+      Type 'undefined' is not assignable to type 'number'.
+server/src/routes/integrations.routes.ts(55,66): error TS2345: Argument of type '{ name: string; type: "github" | "brave_search" | "tavily" | "sandbox" | "telegram"; token: string; meta?: Record<string, unknown> | undefined; }' is not assignable to parameter of type '{ name: string; type: IntegrationType; token: string; meta: Record<string, unknown>; }'.
+  Types of property 'meta' are incompatible.
+    Type 'Record<string, unknown> | undefined' is not assignable to type 'Record<string, unknown>'.
+      Type 'undefined' is not assignable to type 'Record<string, unknown>'.
+server/src/routes/integrations.routes.ts(63,80): error TS2379: Argument of type '{ name?: string | undefined; meta?: Record<string, unknown> | undefined; token?: string | undefined; }' is not assignable to parameter of type '{ name?: string; token?: string; meta?: Record<string, unknown>; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'name' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/routes/providers.routes.ts(89,9): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+server/src/routes/providers.routes.ts(91,38): error TS2379: Argument of type '{ name: string; type: string; selectedModel?: string | null | undefined; model?: string | undefined; baseUrl?: string | undefined; force?: boolean | undefined; apiKey?: string | undefined; defaultModel?: string | undefined; }' is not assignable to parameter of type '{ selectedModel?: string | null; defaultModel?: string; model?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'selectedModel' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | null'.
+      Type 'undefined' is not assignable to type 'string | null'.
+server/src/routes/providers.routes.ts(105,9): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+server/src/routes/providers.routes.ts(107,38): error TS2379: Argument of type '{ name: string; type: string; selectedModel?: string | null | undefined; model?: string | undefined; baseUrl?: string | undefined; apiKey?: string | undefined; defaultModel?: string | undefined; }' is not assignable to parameter of type '{ selectedModel?: string | null; defaultModel?: string; model?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'selectedModel' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | null'.
+      Type 'undefined' is not assignable to type 'string | null'.
+server/src/routes/providers.routes.ts(134,9): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+server/src/routes/providers.routes.ts(136,38): error TS2379: Argument of type '{ name: string; type: string; selectedModel?: string | null | undefined; model?: string | undefined; baseUrl?: string | undefined; apiKey?: string | undefined; defaultModel?: string | undefined; }' is not assignable to parameter of type '{ selectedModel?: string | null; defaultModel?: string; model?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'selectedModel' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | null'.
+      Type 'undefined' is not assignable to type 'string | null'.
+server/src/routes/providers.routes.ts(145,77): error TS2379: Argument of type '{ baseUrl: string | undefined; selectedModel: string | null | undefined; name?: string | undefined; type?: string | undefined; model?: string | undefined; apiKey?: string | undefined; defaultModel?: string | undefined; }' is not assignable to parameter of type 'Partial<ProviderDraftInput>' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'name' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/routes/providers.routes.ts(148,38): error TS2379: Argument of type '{ name?: string | undefined; type?: string | undefined; selectedModel?: string | null | undefined; model?: string | undefined; baseUrl?: string | null | undefined; apiKey?: string | undefined; defaultModel?: string | undefined; }' is not assignable to parameter of type '{ selectedModel?: string | null; defaultModel?: string; model?: string; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'selectedModel' are incompatible.
+    Type 'string | null | undefined' is not assignable to type 'string | null'.
+      Type 'undefined' is not assignable to type 'string | null'.
+server/src/services/providers.service.ts(109,11): error TS2375: Type '{ name: string; type: string; apiKey: string; baseUrl: string | undefined; selectedModel: string | null; }' is not assignable to type 'ProviderDraftInput' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'baseUrl' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/services/providers.service.ts(138,7): error TS2322: Type 'string | null' is not assignable to type 'string'.
+  Type 'null' is not assignable to type 'string'.
+server/src/services/providers.service.ts(162,51): error TS2379: Argument of type '{ config: ProviderRuntimeConfig; requestId: string | undefined; }' is not assignable to parameter of type '{ config: ProviderRuntimeConfig; requestId?: string; signal?: AbortSignal; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'requestId' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+server/src/services/providers.service.ts(194,9): error TS2322: Type 'string | null' is not assignable to type 'string'.
+  Type 'null' is not assignable to type 'string'.
+server/src/telegram.ts(80,30): error TS2345: Argument of type 'string | (Record<string, unknown> & any[])' is not assignable to parameter of type 'string'.
+  Type 'Record<string, unknown> & any[]' is not assignable to type 'string'.
