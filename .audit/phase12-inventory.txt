@@ -34,6 +34,7 @@
 ./docs/V1.5_ARCHITECTURE.md
 ./docs/providers-integrations-ar.md
 ./docs/terminal-protocol.md
+./drizzle.config.ts
 ./eslint.config.js
 ./package-lock.json
 ./package.json
@@ -91,6 +92,7 @@
 ./server/src/repositories/providers.repository.ts
 ./server/src/repositories/sessions.repository.ts
 ./server/src/repositories/users.repository.ts
+./server/src/repositories/websocket-tickets.repository.ts
 ./server/src/routes.test.ts
 ./server/src/routes.ts
 ./server/src/telegram.test.ts
@@ -118,6 +120,7 @@ server/src/providers/model-discovery.ts:40:    const active = inflight.get(key);
 server/src/providers/http.ts:40:    const value = headers.get(name)?.trim();
 server/src/providers/http.ts:103:    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
 server/src/providers/registry.ts:104:  const definition = registry.get(id);
+server/src/repositories/websocket-tickets.repository.ts:23:    return database.transaction(async (tx) => {
 server/src/repositories/agent-runs.repository.ts:27:    await database.transaction(async (tx) => {
 server/src/repositories/agent-runs.repository.ts:76:    await database.transaction(async (tx) => {
 server/src/repositories/sessions.repository.ts:82:    await database.transaction(async (tx) => {
@@ -431,9 +434,14 @@ client/src/pages/TerminalPage.tsx:9:type TerminalEvent = { type: 'session_starte
 ./README.md:102:DATABASE_URL=postgresql://USER:PASSWORD@HOST:6543/postgres
 ./README.md:103:DATABASE_SSL_MODE=require
 ./vitest.config.ts:11:      DATABASE_URL: 'file:./data/unit-test.db',
+./drizzle.config.ts:1:import { defineConfig } from 'drizzle-kit';
+./drizzle.config.ts:3:const databaseUrl = process.env.DATABASE_URL ?? process.env.TEST_DATABASE_URL;
+./drizzle.config.ts:5:  throw new Error('DATABASE_URL or TEST_DATABASE_URL must be a PostgreSQL connection string.');
+./drizzle.config.ts:11:  out: './drizzle',
 ./server/src/config.test.ts:9:  DATABASE_URL: 'postgresql://user:password@example.com:5432/app',
 ./server/src/config.test.ts:68:      'DATABASE_URL',
 ./server/src/config.test.ts:93:    const config = loadConfig({ ...railwayBase, DATABASE_URL: 'file:./data/moataz.db' });
+./server/src/repositories/websocket-tickets.repository.ts:1:import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 ./server/src/repositories/agent-runs.repository.ts:1:import { and, eq, isNull, sql } from 'drizzle-orm';
 ./server/src/repositories/sessions.repository.ts:1:import { and, desc, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 ./server/src/repositories/attachments.repository.ts:1:import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
