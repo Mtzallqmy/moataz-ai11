@@ -66,6 +66,7 @@
 ./server/src/provider-diagnostics.ts
 ./server/src/providers.test.ts
 ./server/src/providers.ts
+./server/src/providers/types.ts
 ./server/src/redaction.test.ts
 ./server/src/redaction.ts
 ./server/src/routes.test.ts
@@ -218,6 +219,12 @@ server/src/llm.ts:375:      return { supported: false, models: [...providerDefin
 server/src/llm.ts:416:export async function diagnoseProviderConnection(provider: Provider, preferredModel?: string): Promise<ProviderProbeResult> {
 server/src/llm.ts:417:  const discovery = await listProviderModels(provider);
 server/src/llm.ts:419:  const examples = [...providerDefinition(provider.type).modelExamples].filter((model) => isConcreteModel(model));
+server/src/providers/types.ts:9:  streaming: CapabilityValue;
+server/src/providers/types.ts:58:  streaming?: CapabilityValue;
+server/src/providers/types.ts:116:  upstreamRequestId?: string;
+server/src/providers/types.ts:138:  upstreamRequestId?: string;
+server/src/providers/types.ts:145:  | { type: 'done'; model: string; upstreamRequestId?: string };
+server/src/providers/types.ts:161:  streamChatCompletion?(input: ProviderChatInput): AsyncIterable<ProviderStreamEvent>;
 server/src/providers.test.ts:2:import { assertProviderCredentials, normalizeBaseUrl, providerDefinition, resolveProviderBaseUrl } from './providers.js';
 server/src/providers.test.ts:6:    expect(resolveProviderBaseUrl('openai', undefined)).toBe('https://api.openai.com/v1');
 server/src/providers.test.ts:7:    expect(resolveProviderBaseUrl('nvidia', undefined)).toBe('https://integrate.api.nvidia.com/v1');
