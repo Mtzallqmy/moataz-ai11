@@ -2,6 +2,13 @@ import { and, eq, isNull, sql } from 'drizzle-orm';
 import { database } from '../database/client.js';
 import { agentRuns, agentSteps, attachments, messages, toolExecutions } from '../database/schema.js';
 
+async function nextSequence(tx: Parameters<Parameters<typeof database.transaction>[0]>[0], chatId: string): Promise<number> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${chatId}))`);
+  const [row] = await tx.select({ next: sql<number>`COALESCE(MAX(${messages.sequence}), 0)::bigint + 1` })
+    .from(messages).where(eq(messages.chatId, chatId));
+  return Number(row?.next ?? 1);
+}
+
 export const agentRunsRepository = {
   async findRunning(chatId: string): Promise<{ id: string } | undefined> {
     const [row] = await database.select({ id: agentRuns.id }).from(agentRuns)
@@ -16,20 +23,16 @@ export const agentRunsRepository = {
     chatId: string;
     providerId: string | null;
     model: string | null;
-    userMessage: {
-      id: string;
-      content: string;
-      idempotencyKey: string;
-      sequence: number;
-    };
+    userMessage: { id: string; content: string; idempotencyKey: string };
     attachmentIds: readonly string[];
-  }): Promise<void> {
-    await database.transaction(async (tx) => {
+  }): Promise<number> {
+    return database.transaction(async (tx) => {
+      const sequence = await nextSequence(tx, input.chatId);
       await tx.insert(messages).values({
         id: input.userMessage.id,
         chatId: input.chatId,
         userId: input.userId,
-        sequence: input.userMessage.sequence,
+        sequence,
         role: 'user',
         content: input.userMessage.content,
         toolCalls: [],
@@ -46,14 +49,16 @@ export const agentRunsRepository = {
         legacyLog: ''
       });
       for (const attachmentId of input.attachmentIds) {
-        await tx.update(attachments).set({ messageId: input.userMessage.id })
+        const rows = await tx.update(attachments).set({ messageId: input.userMessage.id })
           .where(and(
             eq(attachments.id, attachmentId),
             eq(attachments.chatId, input.chatId),
             eq(attachments.userId, input.userId),
             isNull(attachments.messageId)
-          ));
+          )).returning({ id: attachments.id });
+        if (rows.length !== 1) throw new Error('attachment_binding_failed');
       }
+      return sequence;
     });
   },
 
@@ -66,19 +71,19 @@ export const agentRunsRepository = {
       content: string;
       toolCalls: unknown[];
       idempotencyKey: string;
-      sequence: number;
     };
     summary: Record<string, unknown>;
     inputTokens?: number;
     outputTokens?: number;
     totalTokens?: number;
-  }): Promise<void> {
-    await database.transaction(async (tx) => {
+  }): Promise<number> {
+    return database.transaction(async (tx) => {
+      const sequence = await nextSequence(tx, input.assistantMessage.chatId);
       await tx.insert(messages).values({
         id: input.assistantMessage.id,
         chatId: input.assistantMessage.chatId,
         userId: input.userId,
-        sequence: input.assistantMessage.sequence,
+        sequence,
         role: 'assistant',
         content: input.assistantMessage.content,
         toolCalls: input.assistantMessage.toolCalls,
@@ -96,6 +101,7 @@ export const agentRunsRepository = {
         totalTokens: input.totalTokens,
         updatedAt: sql`CURRENT_TIMESTAMP`
       }).where(and(eq(agentRuns.id, input.runId), eq(agentRuns.userId, input.userId)));
+      return sequence;
     });
   },
 
