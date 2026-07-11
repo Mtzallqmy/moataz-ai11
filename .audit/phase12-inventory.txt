@@ -66,6 +66,7 @@
 ./server/src/provider-diagnostics.ts
 ./server/src/providers.test.ts
 ./server/src/providers.ts
+./server/src/providers/registry.ts
 ./server/src/providers/types.ts
 ./server/src/redaction.test.ts
 ./server/src/redaction.ts
@@ -91,6 +92,7 @@
 ./workspace/.gitkeep
 
 # Database imports and SQL sites
+server/src/providers/registry.ts:104:  const definition = registry.get(id);
 server/src/tools.ts:357:      return { url: response.url, status: response.status, contentType: response.headers.get('content-type'), response: payload };
 server/src/tools.ts:368:      const contentType = response.headers.get('content-type') ?? '';
 server/src/tools.ts:409:        const response = await new Octokit({ auth: integration.token }).repos.get({ owner, repo });
@@ -225,6 +227,10 @@ server/src/providers/types.ts:116:  upstreamRequestId?: string;
 server/src/providers/types.ts:138:  upstreamRequestId?: string;
 server/src/providers/types.ts:145:  | { type: 'done'; model: string; upstreamRequestId?: string };
 server/src/providers/types.ts:161:  streamChatCompletion?(input: ProviderChatInput): AsyncIterable<ProviderStreamEvent>;
+server/src/providers/registry.ts:19:    streaming: true,
+server/src/providers/registry.ts:55:    capabilities: { modelDiscovery: false, streaming: true, tools: true, vision: true, embeddings: false, responsesApi: false },
+server/src/providers/registry.ts:70:    capabilities: { modelDiscovery: true, streaming: true, tools: null, vision: true, embeddings: true, responsesApi: false },
+server/src/providers/registry.ts:94:    capabilities: { modelDiscovery: null, streaming: null, tools: null, vision: null, embeddings: null, responsesApi: null }
 server/src/providers.test.ts:2:import { assertProviderCredentials, normalizeBaseUrl, providerDefinition, resolveProviderBaseUrl } from './providers.js';
 server/src/providers.test.ts:6:    expect(resolveProviderBaseUrl('openai', undefined)).toBe('https://api.openai.com/v1');
 server/src/providers.test.ts:7:    expect(resolveProviderBaseUrl('nvidia', undefined)).toBe('https://integrate.api.nvidia.com/v1');
