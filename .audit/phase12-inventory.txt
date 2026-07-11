@@ -58,6 +58,7 @@
 ./server/src/crypto.ts
 ./server/src/database/bootstrap.ts
 ./server/src/database/client.ts
+./server/src/database/ids.ts
 ./server/src/database/migrate.ts
 ./server/src/database/schema.ts
 ./server/src/db-cli.ts
