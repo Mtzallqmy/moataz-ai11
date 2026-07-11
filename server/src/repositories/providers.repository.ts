@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { database } from '../database/client.js';
 import { providerModels, providers } from '../database/schema.js';
@@ -207,20 +208,18 @@ export const providersRepository = {
   },
 
   async applyDiagnostic(userId: string, id: string, diagnostic: ProviderDiagnosticResult, input: {
-    selectedModel?: string;
-    discoveredModels?: DiscoveredModel[];
-    capabilities?: ProviderCapabilities;
+    selectedModel?: string | undefined;
+    discoveredModels?: DiscoveredModel[] | undefined;
+    capabilities?: ProviderCapabilities | undefined;
   } = {}): Promise<ProviderRecord | undefined> {
     const status = statusFromDiagnostic(diagnostic);
-    const failureIncrement = diagnostic.success ? 0 : 1;
-    const nextRetryAt = diagnostic.retryable
-      ? new Date(Date.now() + 60_000).toISOString()
-      : null;
     const [row] = await database.update(providers).set({
       status,
       isReady: diagnostic.success,
-      selectedModel: input.selectedModel,
-      ...(input.selectedModel ? { legacyDefaultModel: input.selectedModel } : {}),
+      ...(input.selectedModel !== undefined ? {
+        selectedModel: input.selectedModel,
+        legacyDefaultModel: input.selectedModel
+      } : {}),
       ...(input.discoveredModels ? { discoveredModels: input.discoveredModels } : {}),
       ...(input.capabilities ? { capabilities: input.capabilities } : {}),
       lastCheckStatus: diagnostic.status,
@@ -228,8 +227,8 @@ export const providersRepository = {
       lastCheckMessage: diagnostic.message.slice(0, 1200),
       lastCheckedAt: sql`CURRENT_TIMESTAMP`,
       lastLatencyMs: diagnostic.latencyMs ?? null,
-      failureCount: diagnostic.success ? 0 : sql`${providers.failureCount} + ${failureIncrement}`,
-      nextRetryAt,
+      failureCount: diagnostic.success ? 0 : sql`${providers.failureCount} + 1`,
+      nextRetryAt: diagnostic.retryable ? new Date(Date.now() + 60_000).toISOString() : null,
       legacyValidationStatus: legacyStatus(status),
       legacyValidationErrorCode: diagnostic.success ? null : `provider_${diagnostic.status}`,
       legacyValidatedAt: sql`CURRENT_TIMESTAMP`,
@@ -243,13 +242,13 @@ export const providersRepository = {
       await tx.delete(providerModels).where(and(eq(providerModels.providerId, providerId), eq(providerModels.userId, userId)));
       if (models.length > 0) {
         await tx.insert(providerModels).values(models.map((model) => ({
-          id: crypto.randomUUID(),
+          id: randomUUID(),
           providerId,
           userId,
           modelId: model.id,
-          name: model.name,
-          ownedBy: model.ownedBy,
-          contextLength: model.contextLength,
+          ...(model.name ? { name: model.name } : {}),
+          ...(model.ownedBy ? { ownedBy: model.ownedBy } : {}),
+          ...(model.contextLength !== undefined ? { contextLength: model.contextLength } : {}),
           capabilities: model.capabilities ?? {},
           expiresAt
         })));
