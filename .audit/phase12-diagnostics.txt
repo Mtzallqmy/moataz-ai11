@@ -22,12 +22,4 @@ npm warn config production Use `--omit=dev` instead.
 > moataz-ai@1.5.0 typecheck
 > tsc -p server/tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit
 
-server/src/llm.ts(43,34): error TS2379: Argument of type '{ providerType: string; apiKey: string; baseUrl: string | undefined; selectedModel: string; customHeaders: Record<string, string> | undefined; }' is not assignable to parameter of type '{ providerType: string; apiKey?: string; baseUrl?: string | null; selectedModel?: string | null; customHeaders?: Record<string, string>; }' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
-  Types of property 'baseUrl' are incompatible.
-    Type 'string | undefined' is not assignable to type 'string | null'.
-      Type 'undefined' is not assignable to type 'string | null'.
-server/src/llm.ts(99,5): error TS2375: Type '{ usage?: { inputTokens?: number | undefined; outputTokens?: number | undefined; totalTokens?: number | undefined; }; requestId?: string; text: string; toolCalls: LLMToolCall[]; model: string; }' is not assignable to type 'AgentStep' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
-  The types of 'usage.inputTokens' are incompatible between these types.
-    Type 'number | undefined' is not assignable to type 'number'.
-      Type 'undefined' is not assignable to type 'number'.
-exit=2
+exit=0
