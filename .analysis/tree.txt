@@ -2,6 +2,7 @@
 .analysis/current-state.md
 .analysis/phase-plan.md
 .analysis/relevant-files.txt
+.analysis/retry-phase1.txt
 .analysis/tree.txt
 .bootstrap/phase1/part00
 .dockerignore
