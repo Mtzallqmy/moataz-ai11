@@ -18,9 +18,9 @@ jobs:
           ref: ${{ github.head_ref }}
       - name: Package source
         run: |
-          tar --exclude=.git -czf moataz-ai11-source.tgz .
+          tar --exclude=.git -czf "$RUNNER_TEMP/moataz-ai11-source.tgz" .
       - uses: actions/upload-artifact@v4
         with:
           name: moataz-ai11-source
-          path: moataz-ai11-source.tgz
+          path: ${{ runner.temp }}/moataz-ai11-source.tgz
           retention-days: 1
