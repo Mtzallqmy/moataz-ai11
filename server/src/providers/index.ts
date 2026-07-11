@@ -3,7 +3,7 @@ import { GeminiAdapter } from './adapters/gemini.adapter.js';
 import { OpenAICompatibleAdapter } from './adapters/openai-compatible.adapter.js';
 import { normalizeBaseUrlOnly, normalizeProviderUrls } from './base-url.js';
 import { getProviderDefinition, providerRegistry } from './registry.js';
-import type { NormalizedProviderConfig, ProviderAdapter, ProviderDefinition } from './types.js';
+import type { NormalizedProviderConfig, ProviderAdapter } from './types.js';
 
 const adapters = new Map<string, ProviderAdapter>();
 
