@@ -142,10 +142,6 @@ server/src/telegram.ts:151:  await run('UPDATE integrations SET meta = ?, update
 server/src/telegram.ts:174:  const existing = sessions.get(key);
 server/src/telegram.ts:191:  await run('UPDATE integrations SET meta = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [JSON.stringify(next), row.id, row.user_id]);
 server/src/telegram.ts:799:      if (now - (lastMessageAt.get(chatId) ?? 0) < 750) return;
-server/src/attachments.ts:5:import { type DbRow, query, run } from './db.js';
-server/src/attachments.ts:115:    await run(
-server/src/attachments.ts:160:    await run(
-server/src/attachments.ts:178:  await run('DELETE FROM attachments WHERE id = ? AND chat_id = ? AND user_id = ? AND message_id IS NULL', [id, chatId, userId]);
 server/src/db-cli.ts:1:import { close, getMigrationStatus, migrate, ping } from './db.js';
 server/src/ws-tickets.ts:3:import { cryptoId, get, query, run, sha256 } from './db.js';
 server/src/ws-tickets.ts:19:  await run(
@@ -337,7 +333,7 @@ server/src/provider-diagnostics.ts:48:  const classified = classifyUpstreamError
 server/src/provider-diagnostics.ts:124:  const noteByStage: Record<UpstreamStage, string> = {
 server/src/provider-diagnostics.ts:163:  const classified = classifyUpstreamError(error);
 server/src/provider-diagnostics.ts:168:    ...(classified.upstreamStatus !== undefined ? { upstreamStatus: classified.upstreamStatus } : {}),
-server/src/attachments.ts:105:  const mimeType = input.mimeType.split(';')[0]!.trim().toLowerCase() || 'application/octet-stream';
+server/src/attachments.ts:94:  const mimeType = input.mimeType.split(';')[0]!.trim().toLowerCase() || 'application/octet-stream';
 server/src/provider-diagnostics.test.ts:38:  it('attaches diagnostics without losing upstream details', () => {
 server/src/logger.ts:15:  const stream = level === 'error' || level === 'warn' ? process.stderr : process.stdout;
 server/src/logger.ts:16:  stream.write(`${payload}\n`);
