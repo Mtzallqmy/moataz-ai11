@@ -33,6 +33,7 @@ export class LLMError extends AppError {
 }
 
 type UnknownRecord = Record<string, unknown>;
+type AnthropicImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 
 function record(value: unknown): UnknownRecord {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as UnknownRecord : {};
@@ -144,9 +145,7 @@ async function providerJson(
   let payload: unknown = {};
   if (raw.trim()) {
     try { payload = JSON.parse(raw) as unknown; }
-    catch {
-      payload = { message: raw.slice(0, 1200) };
-    }
+    catch { payload = { message: raw.slice(0, 1200) }; }
   }
   if (!response.ok) {
     const message = payloadMessage(payload, `${provider.name || provider.type} returned HTTP ${response.status}.`);
@@ -191,14 +190,18 @@ function anthropicMessages(messages: readonly Msg[]): Anthropic.MessageParam[] {
         return { role: 'user', content: `Untrusted tool result for ${message.name}:\n${message.content}` };
       }
       if (message.images?.length) {
-        const content: Anthropic.ContentBlockParam[] = [
-          ...message.images.map((image): Anthropic.ImageBlockParam => ({
-            type: 'image',
-            source: { type: 'base64', media_type: image.mimeType as Anthropic.Base64ImageSource['media_type'], data: image.dataBase64 }
-          })),
-          { type: 'text', text: message.content }
+        const content = [
+          ...message.images.flatMap((image) => {
+            const mediaType = image.mimeType as AnthropicImageMediaType;
+            if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mediaType)) return [];
+            return [{
+              type: 'image' as const,
+              source: { type: 'base64' as const, media_type: mediaType, data: image.dataBase64 }
+            }];
+          }),
+          { type: 'text' as const, text: message.content }
         ];
-        return { role: 'user', content };
+        return { role: 'user', content } as unknown as Anthropic.MessageParam;
       }
       return { role: 'user', content: message.content };
     });
@@ -440,11 +443,12 @@ export async function diagnoseProviderConnection(provider: Provider, preferredMo
       };
     } catch (error) {
       lastError = error;
+      const stage = failureStage(error);
       attempts.push({
         model: candidate,
         status: 'failed',
         ...(error instanceof AppError ? { errorCode: error.code } : {}),
-        ...(failureStage(error) ? { errorStage: failureStage(error) } : {})
+        ...(stage ? { errorStage: stage } : {})
       });
       if (!shouldTryAnotherModel(error)) break;
     }
