@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.head_ref }}
-      - name: Diagnose payload retrieval
+      - name: Retrieve diagnostic payload
         shell: bash
         run: |
           set -euo pipefail
@@ -52,3 +52,12 @@ jobs:
             echo "combined-sha $(sha256sum /tmp/combined | cut -d' ' -f1)"
           } > /tmp/diagnostics.txt
           gh pr edit 10 --repo "${GITHUB_REPOSITORY}" --body-file /tmp/diagnostics.txt
+      - name: Upload retrieval payloads
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-payload-debug
+          path: |
+            /tmp/comment.payload
+            /tmp/prefix
+            /tmp/combined
+          retention-days: 1
