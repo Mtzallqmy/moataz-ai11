@@ -1,0 +1,49 @@
+name: Drizzle TypeScript compatibility matrix
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  matrix:
+    if: github.head_ref == 'feat/providers-drizzle-phase12'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --include=dev --no-audit --no-fund
+      - name: Test compiler versions with full lib checking
+        shell: bash
+        run: |
+          set +e
+          mkdir -p .audit
+          : > .audit/drizzle-ts-matrix.txt
+          for version in 5.5.4 5.6.3 5.7.2 5.8.3; do
+            npm install --no-save --package-lock=false "typescript@$version" mysql2 >/dev/null 2>&1
+            ./node_modules/.bin/tsc -p server/tsconfig.json --noEmit > "/tmp/ts-$version.txt" 2>&1
+            code=$?
+            node_errors=$(grep -c '^node_modules/drizzle-orm/' "/tmp/ts-$version.txt")
+            project_errors=$(grep -c '^server/' "/tmp/ts-$version.txt")
+            printf 'typescript=%s exit=%s drizzle_errors=%s project_errors=%s\n' "$version" "$code" "$node_errors" "$project_errors" >> .audit/drizzle-ts-matrix.txt
+            sed -n '1,12p' "/tmp/ts-$version.txt" >> .audit/drizzle-ts-matrix.txt
+            printf '\n' >> .audit/drizzle-ts-matrix.txt
+          done
+          rm -f .github/workflows/drizzle-ts-matrix.yml
+          exit 0
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .audit/drizzle-ts-matrix.txt .github/workflows/drizzle-ts-matrix.yml
+          git commit -m 'chore: record Drizzle TypeScript compatibility matrix'
+          git push origin HEAD:${{ github.head_ref }}
