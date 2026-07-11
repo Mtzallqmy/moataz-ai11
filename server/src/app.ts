@@ -160,6 +160,29 @@ export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
     const requestIdValue = typeof res.locals.requestId === 'string' ? res.locals.requestId : undefined;
     if (error instanceof AppError) {
       logger.warn('request_failed', { requestId: requestIdValue, code: error.code, status: error.status });
+      const details = error.details !== null && typeof error.details === 'object' && !Array.isArray(error.details)
+        ? error.details as Record<string, unknown>
+        : undefined;
+      const diagnostic = details?.diagnostic !== null && typeof details?.diagnostic === 'object' && !Array.isArray(details?.diagnostic)
+        ? details.diagnostic as Record<string, unknown>
+        : undefined;
+      if (error.code.startsWith('provider_') && diagnostic) {
+        res.status(error.status).json({
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message,
+            messageAr: diagnostic.userMessageAr,
+            retryable: diagnostic.retryable === true,
+            httpStatus: diagnostic.httpStatus ?? error.status,
+            requestId: requestIdValue,
+            ...(typeof diagnostic.upstreamRequestId === 'string' ? { providerRequestId: diagnostic.upstreamRequestId } : {})
+          },
+          details: { diagnostic },
+          requestId: requestIdValue
+        });
+        return;
+      }
       res.status(error.status).json({ error: error.code, ...(error.details !== undefined ? { details: error.details } : {}), requestId: requestIdValue });
       return;
     }

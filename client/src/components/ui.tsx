@@ -14,7 +14,7 @@ export function Notice({ tone = 'info', children, onDismiss }: { tone?: 'info' |
 }
 
 export function StatusBadge({ status, t }: { status: ValidationStatus; t: T }) {
-  const key: TranslationKey = status === 'verified' ? 'verified' : status === 'failed' ? 'failed' : 'untested';
+  const key: TranslationKey = status === 'verified' || status === 'ready' ? 'verified' : ['failed', 'invalid_credentials', 'configuration_error'].includes(status) ? 'failed' : 'untested';
   return <span className={`status-badge ${status}`}>{t(key)}</span>;
 }
 
