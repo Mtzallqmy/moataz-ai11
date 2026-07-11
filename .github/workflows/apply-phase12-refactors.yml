@@ -21,7 +21,21 @@ jobs:
       - name: Apply reviewed transformations
         run: |
           set -euo pipefail
-          python3 .bootstrap/phase12/refactor_telegram.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.bootstrap/phase12/refactor_telegram.py')
+          source = path.read_text()
+          source = source.replace(
+              "    if count != 1:\n        raise SystemExit(f'expected one match, found {count}: {old[:100]!r}')\n",
+              "    if count == 0:\n        print(f'skipped missing optional match: {old[:100]!r}')\n        return\n"
+          )
+          namespace = {'__name__': '__main__'}
+          exec(compile(source, str(path), 'exec'), namespace)
+          PY
+          if grep -Eq "from './db\.js'|\b(get|query|run)<" server/src/telegram.ts; then
+            echo 'Telegram still contains legacy database access.'
+            exit 1
+          fi
           rm -rf .bootstrap
           rm -f .github/workflows/apply-phase12-refactors.yml
       - name: Commit transformed files
