@@ -82,7 +82,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  issues: write
+  issues: read
 
 jobs:
   apply:
@@ -115,6 +115,8 @@ jobs:
             gh api "repos/${GITHUB_REPOSITORY}/git/blobs/${sha}" --jq .content | tr -d '\n' | base64 -d >> /tmp/combined
           done
           {
+            echo 'WIP: provider platform and Drizzle/PostgreSQL migration'
+            echo
             echo 'PHASE1-PREFIX-DIAGNOSTICS'
             echo "body-bytes $(wc -c < /tmp/body.txt)"
             echo "payload-bytes $(wc -c < /tmp/comment.payload)"
@@ -123,7 +125,7 @@ jobs:
             echo "combined-bytes $(wc -c < /tmp/combined)"
             echo "combined-sha $(sha256sum /tmp/combined | cut -d' ' -f1)"
           } > /tmp/diagnostics.txt
-          gh pr comment 10 --repo "${GITHUB_REPOSITORY}" --body-file /tmp/diagnostics.txt
+          gh pr edit 10 --repo "${GITHUB_REPOSITORY}" --body-file /tmp/diagnostics.txt
 
 ===== END FILE: .github/workflows/apply-phase1.yml =====
 
