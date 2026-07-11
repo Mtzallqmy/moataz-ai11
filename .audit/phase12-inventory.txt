@@ -127,7 +127,6 @@ server/src/telegram.ts:151:  await run('UPDATE integrations SET meta = ?, update
 server/src/telegram.ts:174:  const existing = sessions.get(key);
 server/src/telegram.ts:191:  await run('UPDATE integrations SET meta = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [JSON.stringify(next), row.id, row.user_id]);
 server/src/telegram.ts:799:      if (now - (lastMessageAt.get(chatId) ?? 0) < 750) return;
-server/src/providers.ts:42:  return catalog.get(normalized) ?? {
 server/src/attachments.ts:5:import { type DbRow, query, run } from './db.js';
 server/src/attachments.ts:115:    await run(
 server/src/attachments.ts:160:    await run(
@@ -310,15 +309,13 @@ server/src/telegram.ts:6:  listProviderModels,
 server/src/telegram.ts:401:      const models = await listProviderModels(provider);
 server/src/telegram.ts:488:  let step = await completeAgentStep(provider, messages, providerRow.default_model, availableTools);
 server/src/telegram.ts:524:    step = await completeAgentStep(provider, messages, providerRow.default_model, availableTools);
-server/src/providers.ts:38:export const providerCatalog: readonly ProviderCatalogEntry[] = entries;
-server/src/providers.ts:40:export function providerDefinition(type: string): ProviderCatalogEntry {
-server/src/providers.ts:54:  return providerDefinition(type).adapter;
-server/src/providers.ts:80:export function normalizeBaseUrl(value: string | undefined | null): string | undefined {
-server/src/providers.ts:106:export function resolveProviderBaseUrl(type: string, supplied: string | undefined | null): string | undefined {
-server/src/providers.ts:111:  const suppliedUrl = normalizeBaseUrl(supplied);
-server/src/providers.ts:113:    const definition = providerDefinition(normalizedType);
-server/src/providers.ts:124:  return normalizeBaseUrl(providerDefinition(normalizedType).defaultBaseUrl);
-server/src/providers.ts:128:  const definition = providerDefinition(type);
+server/src/providers.ts:2:import { normalizeProviderBaseUrl, providerCatalogEntry, resolveProviderUrls } from './providers/base-url.js';
+server/src/providers.ts:7:export type ProviderCatalogEntry = ReturnType<typeof providerCatalogEntry>;
+server/src/providers.ts:9:export const providerCatalog: readonly ProviderCatalogEntry[] = providerRegistry.map(providerCatalogEntry);
+server/src/providers.ts:11:export function providerDefinition(type: string): ProviderCatalogEntry {
+server/src/providers.ts:12:  return providerCatalogEntry(getProviderDefinition(type));
+server/src/providers.ts:19:export function normalizeBaseUrl(value: string | undefined | null): string | undefined {
+server/src/providers.ts:24:export function resolveProviderBaseUrl(type: string, supplied: string | undefined | null): string | undefined {
 server/src/provider-diagnostics.ts:2:import { classifyUpstreamError, type UpstreamStage } from './upstream-errors.js';
 server/src/provider-diagnostics.ts:22:  errorStage?: UpstreamStage;
 server/src/provider-diagnostics.ts:37:function stageFrom(error: unknown): { stage: UpstreamStage; retryable: boolean } {
