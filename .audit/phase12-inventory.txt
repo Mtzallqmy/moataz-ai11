@@ -74,6 +74,7 @@
 ./server/src/providers/base-url.ts
 ./server/src/providers/diagnostics.ts
 ./server/src/providers/http.ts
+./server/src/providers/model-discovery.ts
 ./server/src/providers/registry.ts
 ./server/src/providers/types.ts
 ./server/src/redaction.test.ts
@@ -100,6 +101,8 @@
 ./workspace/.gitkeep
 
 # Database imports and SQL sites
+server/src/providers/model-discovery.ts:37:  const existing = cache.get(key);
+server/src/providers/model-discovery.ts:40:    const active = inflight.get(key);
 server/src/providers/http.ts:40:    const value = headers.get(name)?.trim();
 server/src/providers/http.ts:103:    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
 server/src/providers/registry.ts:104:  const definition = registry.get(id);
