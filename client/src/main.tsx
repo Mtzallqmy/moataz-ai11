@@ -37,7 +37,13 @@ function App() {
 
   if (status === 'loading') return <div className="login-screen"><div className="login-card"><div className="brand centered"><div className="logo">M</div><strong>Moataz AI</strong></div><div className="loading-line" /><p>{t('loading')}</p></div></div>;
   if (status === 'unauthenticated') return <Login t={t} language={language} />;
-  return <Dashboard t={t} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} onLogout={() => { void logout(); }} />;
+  const confirmedLogout = () => {
+    const confirmed = window.confirm(language === 'ar'
+      ? 'هل تريد تسجيل الخروج من هذا الجهاز؟ لن يتم تسجيل الخروج بسبب أخطاء API أو انقطاع الشبكة.'
+      : 'Sign out from this device? API and network errors never sign you out automatically.');
+    if (confirmed) void logout();
+  };
+  return <Dashboard t={t} language={language} setLanguage={setLanguage} theme={theme} setTheme={setTheme} onLogout={confirmedLogout} />;
 }
 
 function Login({ t, language }: { t: T; language: Language }) {
@@ -49,14 +55,13 @@ function Login({ t, language }: { t: T; language: Language }) {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setLoading(true);
-    setError('');
+    setLoading(true); setError('');
     try { await login({ email, password }); }
     catch (caught) { setError(formatError(caught, language)); }
     finally { setLoading(false); }
   };
 
-  return <div className="login-screen"><div className="login-card"><div className="brand centered"><div className="logo">M</div><div><strong>Moataz AI</strong><small>Production Agent Platform</small></div></div><div className="login-copy"><h1>{t('login')}</h1><p>{language === 'ar' ? 'أدخل بيانات حساب المدير الذي أنشأته من متغيرات Railway.' : 'Use the administrator credentials configured in Railway.'}</p></div>{error && <pre className="login-error" role="alert">{error}</pre>}<form onSubmit={submit} className="form-grid one-column"><label><span>{t('email')}</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label><span>{t('password')}</span><input type="password" autoComplete="current-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label><button type="submit" disabled={loading}>{loading ? t('loading') : t('login')}</button></form></div></div>;
+  return <div className="login-screen"><div className="login-card"><div className="brand centered"><div className="logo">M</div><div><strong>Moataz AI</strong><small>Production Agent Platform</small></div></div><div className="login-copy"><h1>{t('login')}</h1><p>{language === 'ar' ? 'أدخل بيانات حساب المدير. تُحفظ الجلسة الآمنة في Cookie محمية، ولا تُنهى بسبب فشل مزوّد خارجي.' : 'Use your administrator credentials. The secure session is stored in a protected cookie and is not ended by external-provider failures.'}</p></div>{error && <pre className="login-error" role="alert">{error}</pre>}<form onSubmit={submit} className="form-grid one-column"><label><span>{t('email')}</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label><span>{t('password')}</span><input type="password" autoComplete="current-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} required /></label><button type="submit" disabled={loading}>{loading ? t('loading') : t('login')}</button></form></div></div>;
 }
 
 const navigation: Array<{ page: Page; label: TranslationKey; icon: string }> = [
@@ -80,11 +85,9 @@ function Dashboard({ t, language, setLanguage, theme, setTheme, onLogout }: { t:
   }, []);
 
   const navigate = (value: Page) => {
-    setPage(value);
-    setMenuOpen(false);
+    setPage(value); setMenuOpen(false);
     const url = new URL(window.location.href);
-    if (value === 'home') url.searchParams.delete('page');
-    else url.searchParams.set('page', value);
+    if (value === 'home') url.searchParams.delete('page'); else url.searchParams.set('page', value);
     window.history.pushState({}, '', url);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
