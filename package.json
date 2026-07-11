@@ -1,9 +1,9 @@
 {
   "name": "moataz-ai",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
-  "description": "Moataz AI - production AI agent platform with provider diagnostics, Telegram controls, tools, GitHub, web search and external sandbox integrations.",
+  "description": "Moataz AI - production AI agent platform with resilient provider discovery, persistent sessions, multimodal attachments, multi-agent orchestration, Telegram controls, web/API tools, GitHub and external sandbox integrations.",
   "scripts": {
     "dev": "concurrently \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "tsx watch server/src/index.ts",

@@ -167,6 +167,21 @@ const baseStatements = [
     FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`,
+  `CREATE TABLE IF NOT EXISTS attachments (
+    id TEXT PRIMARY KEY,
+    chat_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    message_id TEXT,
+    name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    storage_path TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (chat_id) REFERENCES chats(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE SET NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS integrations (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -229,10 +244,12 @@ const baseStatements = [
   'CREATE INDEX IF NOT EXISTS idx_chats_user_updated ON chats(user_id, updated_at DESC)',
   'CREATE INDEX IF NOT EXISTS idx_messages_chat_created ON messages(chat_id, created_at ASC)',
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_idempotency ON messages(chat_id, idempotency_key, role) WHERE idempotency_key IS NOT NULL',
+  'CREATE INDEX IF NOT EXISTS idx_attachments_chat_message ON attachments(chat_id, message_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_attachments_user_pending ON attachments(user_id, chat_id, message_id)',
   'CREATE INDEX IF NOT EXISTS idx_integrations_user_type ON integrations(user_id, type, is_active)',
   'CREATE INDEX IF NOT EXISTS idx_workspaces_user_name ON workspaces(user_id, name)',
   'CREATE INDEX IF NOT EXISTS idx_agent_runs_chat_status ON agent_runs(chat_id, status)',
-  "CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_runs_one_running ON agent_runs(chat_id) WHERE status = 'running'", 
+  "CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_runs_one_running ON agent_runs(chat_id) WHERE status = 'running'",
   'CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id, expires_at)',
   'CREATE INDEX IF NOT EXISTS idx_websocket_tickets_expiry ON websocket_tickets(expires_at)'
 ] as const;
@@ -260,6 +277,7 @@ export async function migrate(): Promise<void> {
 
   await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.2.0', 'phase1-1.2.0']);
   await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.3.0', 'phase1-1.3.0']);
+  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.5.0', 'phase1-1.5.0']);
 
   const existing = await get<{ id: string }>('SELECT id FROM users WHERE email = ?', [config.defaultAdminEmail]);
   if (!existing) {

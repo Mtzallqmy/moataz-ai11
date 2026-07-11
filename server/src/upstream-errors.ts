@@ -55,11 +55,15 @@ function upstreamMessage(error: unknown): string {
   const root = record(error);
   const response = record(root?.response);
   const body = record(root?.error) ?? record(response?.data) ?? record(response?.body);
+  const nestedError = record(body?.error);
   const candidates = [
+    nestedError?.message,
+    nestedError?.detail,
     root?.message,
     body?.message,
     body?.description,
-    body?.error,
+    body?.detail,
+    typeof body?.error === 'string' ? body.error : undefined,
     response?.statusText,
     typeof error === 'string' ? error : undefined
   ];
@@ -95,28 +99,34 @@ export function classifyUpstreamError(error: unknown): ClassifiedUpstreamError {
   if (/abort|timeout|timed out|deadline exceeded/.test(normalized)) {
     return classified('timeout', 504, true, message, upstreamStatus);
   }
-  if (upstreamStatus === 401 || /unauthorized|invalid (api )?key|incorrect (api )?key|invalid token|token is invalid/.test(normalized)) {
-    return classified('authentication', 401, false, message, upstreamStatus);
+  if (upstreamStatus === 401 || /unauthorized|invalid (api )?key|incorrect (api )?key|invalid token|token is invalid|api key not valid/.test(normalized)) {
+    return classified('authentication', 422, false, message, upstreamStatus);
   }
-  if (upstreamStatus === 402 || /payment required|insufficient credits?|not enough credits?|requires? more credits?|billing|quota exceeded/.test(normalized)) {
+  if (upstreamStatus === 402 || /payment required|insufficient credits?|not enough credits?|requires? more credits?|billing|quota exceeded|credit balance/.test(normalized)) {
     return classified('billing', 402, false, message, upstreamStatus);
   }
-  if (upstreamStatus === 403 || /forbidden|permission denied|insufficient scope|not allowed/.test(normalized)) {
-    return classified('authorization', 403, false, message, upstreamStatus);
+  if (upstreamStatus === 403 || /forbidden|permission denied|insufficient scope|not allowed|access denied/.test(normalized)) {
+    return classified('authorization', 422, false, message, upstreamStatus);
   }
-  if (upstreamStatus === 404 || /model.*not found|unknown model|no such model|does not exist/.test(normalized)) {
+  if (upstreamStatus === 404 || /model.*not found|unknown model|no such model|does not exist|invalid model/.test(normalized)) {
     return classified('model_not_found', 422, false, message, upstreamStatus);
   }
-  if (upstreamStatus === 429 || /rate limit|too many requests|requests per minute|tokens per minute/.test(normalized)) {
+  if (upstreamStatus === 429 || /rate limit|too many requests|requests per minute|tokens per minute|capacity/.test(normalized)) {
     return classified('rate_limit', 429, true, message, upstreamStatus);
   }
-  if (upstreamStatus === 400 || /invalid request|bad request|validation failed|malformed/.test(normalized)) {
+  if (
+    upstreamStatus === 400
+    || upstreamStatus === 409
+    || upstreamStatus === 415
+    || upstreamStatus === 422
+    || /invalid request|bad request|validation failed|malformed|invalid url|only absolute urls|failed to parse url|unsupported protocol|base url/.test(normalized)
+  ) {
     return classified('invalid_request', 422, false, message, upstreamStatus);
   }
   if (upstreamStatus !== undefined && upstreamStatus >= 500) {
     return classified('service_unavailable', 502, true, message, upstreamStatus);
   }
-  if (/econn|enotfound|network|fetch failed|socket|dns|certificate|tls/.test(normalized)) {
+  if (/econn|enotfound|network|fetch failed|socket|dns|certificate|tls|connection refused/.test(normalized)) {
     return classified('network', 503, true, message, upstreamStatus);
   }
   return classified('unknown', 502, false, message, upstreamStatus);

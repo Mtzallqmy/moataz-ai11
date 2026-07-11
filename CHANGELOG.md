@@ -2,6 +2,19 @@
 
 All notable changes are documented here. The project version is synchronized with `package.json`.
 
+## [1.5.0] — 2026-07-11
+
+### Provider recovery, sessions, attachments, and multi-agent execution
+
+- Replaced fragile OpenAI-compatible SDK URL composition with validated direct HTTP transport and precise upstream response parsing.
+- Added automatic model discovery, candidate scoring, real model probes, fallback selection, and chat recovery when a saved model becomes unavailable.
+- Reserved HTTP 401 for Moataz AI sessions; provider and integration authentication failures no longer log users out.
+- Preserved authenticated UI state during transient network failures and required explicit user confirmation before logout.
+- Added persistent chat uploads for text/code, images, ZIP archives, and binary files with size limits, workspace isolation, SHA-256 metadata, image model input, text extraction, and ZIP manifests.
+- Added an opt-in multi-agent chat mode using up to three verified providers with bounded independent analysis and synthesis.
+- Added a confirmed generic public HTTP API tool with SSRF protection, response limits, and structured errors.
+- Expanded production diagnostics for invalid URLs, endpoint construction, model attempts, billing, authorization, network, and retryability.
+
 ## [1.4.0] — 2026-07-11
 
 ### Telegram console and provider diagnostics

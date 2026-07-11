@@ -26,11 +26,13 @@ function isProbeRequest(req: Request): boolean {
   return req.path === '/health' || req.path === '/ready';
 }
 
+function isAttachmentUpload(req: Request): boolean {
+  return req.method === 'POST' && /^\/api\/chats\/[0-9a-f-]{36}\/attachments$/i.test(req.path);
+}
+
 export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
   const app = express();
 
-  // This must be configured before any middleware reads req.ip. Railway always
-  // places the service behind one trusted reverse-proxy hop.
   app.set('trust proxy', config.trustProxy);
   if (config.isRailway && (app.get('trust proxy') === false || app.get('trust proxy') === 0)) {
     throw new Error('Invalid runtime configuration: Railway requires trust proxy to be enabled');
@@ -95,16 +97,21 @@ export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
       }
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Request-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Request-Id', 'X-File-Name'],
     exposedHeaders: ['X-Request-Id'],
     maxAge: 600
   }));
 
   app.use(compression());
-  app.use(express.json({ limit: '1mb', strict: true }));
+  const jsonParser = express.json({ limit: '1mb', strict: true });
+  app.use((req, res, next) => {
+    if (isAttachmentUpload(req)) {
+      next();
+      return;
+    }
+    jsonParser(req, res, next);
+  });
 
-  // Limit API traffic only. Railway health/readiness probes must not consume a
-  // user's quota or trigger IP validation during platform health checks.
   app.use('/api', rateLimit({
     windowMs: 60_000,
     limit: 240,
@@ -158,6 +165,11 @@ export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
 
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const requestIdValue = typeof res.locals.requestId === 'string' ? res.locals.requestId : undefined;
+    const parserError = error !== null && typeof error === 'object' && !Array.isArray(error) ? error as Record<string, unknown> : {};
+    if (parserError.type === 'entity.too.large') {
+      res.status(413).json({ error: 'request_too_large', requestId: requestIdValue });
+      return;
+    }
     if (error instanceof AppError) {
       logger.warn('request_failed', { requestId: requestIdValue, code: error.code, status: error.status });
       res.status(error.status).json({ error: error.code, ...(error.details !== undefined ? { details: error.details } : {}), requestId: requestIdValue });
