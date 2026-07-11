@@ -22,11 +22,14 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
-      - name: Retrieve and apply reviewed provider patch
+      - name: Retrieve and diagnose reviewed provider patch
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p .analysis
           : > /tmp/phase1.double.b64
+          : > .analysis/phase1-blob-diagnostics.txt
+          index=0
           for sha in \
             ec14c37da6621f568d0a786191ff26f810c78fe6 \
             31539dc2323c7d89dda02cd8ad2caba9514341c8 \
@@ -37,28 +40,23 @@ jobs:
             aeb8c9e0de594ecf04e914abc4196b063de5c388 \
             f009067c25bcd39f3d93eb1885d5ec7b9d293ac4
           do
+            file="/tmp/chunk-${index}"
             gh api "repos/${GITHUB_REPOSITORY}/git/blobs/${sha}" --jq .content \
               | tr -d '\n' \
-              | base64 -d >> /tmp/phase1.double.b64
+              | base64 -d > "${file}"
+            printf '%s %s %s\n' "${index}" "$(wc -c < "${file}")" "$(sha256sum "${file}" | cut -d' ' -f1)" >> .analysis/phase1-blob-diagnostics.txt
+            cat "${file}" >> /tmp/phase1.double.b64
+            index=$((index + 1))
           done
-          echo "d4f3a560df41d6104c9b26e014c83989cf11b0dbe30afdb49863e52e2c1dace3  /tmp/phase1.double.b64" | sha256sum -c -
-          base64 -d /tmp/phase1.double.b64 > /tmp/phase1.once.b64
-          base64 -d /tmp/phase1.once.b64 > /tmp/phase1.patch.gz
-          gzip -dc /tmp/phase1.patch.gz > /tmp/phase1.patch
-          echo "47272fbd52b39403b8ce082088c2fb2e596b1782dd9c9ccd5d651c81a04e4adb  /tmp/phase1.patch" | sha256sum -c -
-          git apply --check /tmp/phase1.patch
-          git apply /tmp/phase1.patch
-          rm -rf .analysis .bootstrap
-          rm -f .github/workflows/generate-analysis-snapshot.yml
-          rm -f .github/workflows/export-source.yml
-          rm -f .github/workflows/apply-phase1.yml
+          printf 'combined %s %s\n' "$(wc -c < /tmp/phase1.double.b64)" "$(sha256sum /tmp/phase1.double.b64 | cut -d' ' -f1)" >> .analysis/phase1-blob-diagnostics.txt
 
-      - name: Commit provider phase 1
+      - name: Commit diagnostics
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'feat: rebuild provider platform phase 1'
+          git add .analysis/phase1-blob-diagnostics.txt
+          git commit -m 'chore: record provider patch blob diagnostics'
+          git pull --rebase origin ${{ github.head_ref }}
           git push origin HEAD:${{ github.head_ref }}
