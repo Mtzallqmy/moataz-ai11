@@ -56,7 +56,7 @@ export class GeminiAdapter implements ProviderAdapter {
     return normalize(input);
   }
 
-  async discoverModels(input: ProviderRuntimeConfig, signal?: AbortSignal): Promise<ModelDiscoveryResult> {
+  async discoverModels(input: ProviderRuntimeConfig, signal?: AbortSignal | undefined): Promise<ModelDiscoveryResult> {
     const config = normalize(input);
     const urls = resolveProviderUrls('gemini', config.normalizedBaseUrl);
     const endpoint = urls.resolvedModelsUrls[0];
@@ -67,7 +67,7 @@ export class GeminiAdapter implements ProviderAdapter {
       url: url.toString(),
       method: 'GET',
       headers: { Accept: 'application/json' },
-      signal
+      ...(signal ? { signal } : {})
     });
     const parsed = modelsSchema.safeParse(response.payload);
     if (!parsed.success) throw new AppError('provider_invalid_response', 502, 'Gemini returned an invalid models response.');
@@ -103,7 +103,10 @@ export class GeminiAdapter implements ProviderAdapter {
   async createChatCompletion(input: ProviderChatInput): Promise<ProviderChatResult> {
     const config = normalize(input.config);
     const model = new GoogleGenerativeAI(config.apiKey).getGenerativeModel({ model: config.model });
-    const response = await model.generateContent(contentInput(input.messages), { signal: input.signal });
+    const response = await model.generateContent(
+      contentInput(input.messages),
+      input.signal ? { signal: input.signal } : undefined
+    );
     const text = response.response.text().trim();
     return { text, toolCalls: [], model: config.model };
   }
