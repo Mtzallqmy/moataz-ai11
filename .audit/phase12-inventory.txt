@@ -68,6 +68,7 @@
 ./server/src/providers.test.ts
 ./server/src/providers.ts
 ./server/src/providers/adapters/anthropic.adapter.ts
+./server/src/providers/adapters/gemini.adapter.ts
 ./server/src/providers/adapters/openai-compatible.adapter.ts
 ./server/src/providers/base-url.ts
 ./server/src/providers/diagnostics.ts
@@ -246,6 +247,9 @@ server/src/providers/adapters/anthropic.adapter.ts:124:    const stream = client
 server/src/providers/adapters/anthropic.adapter.ts:138:    stream.on('text', (text) => text);
 server/src/providers/adapters/anthropic.adapter.ts:139:    for await (const event of stream) {
 server/src/providers/adapters/anthropic.adapter.ts:147:    const final = await stream.finalMessage();
+server/src/providers/adapters/gemini.adapter.ts:87:          streaming: methods.includes('streamGenerateContent') ? true : null,
+server/src/providers/adapters/gemini.adapter.ts:111:  async *streamChatCompletion(input: ProviderChatInput): AsyncIterable<ProviderStreamEvent> {
+server/src/providers/adapters/gemini.adapter.ts:115:    for await (const chunk of result.stream) {
 server/src/providers/http.ts:9:  readonly upstreamRequestId?: string;
 server/src/providers/http.ts:16:    upstreamRequestId?: string;
 server/src/providers/http.ts:24:    this.upstreamRequestId = options.upstreamRequestId;
