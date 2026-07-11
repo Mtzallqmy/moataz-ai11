@@ -17,6 +17,29 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const USER_CACHE_KEY = 'moataz_session_user';
+const sessionErrorCodes = new Set(['unauthorized', 'invalid_token', 'session_expired', 'refresh_token_invalid']);
+
+function cachedUser(): SessionUser | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(USER_CACHE_KEY) ?? 'null') as unknown;
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+    const record = value as Record<string, unknown>;
+    if (
+      typeof record.id !== 'string'
+      || typeof record.email !== 'string'
+      || typeof record.name !== 'string'
+      || (record.role !== 'admin' && record.role !== 'user')
+    ) return null;
+    return record as SessionUser;
+  } catch {
+    return null;
+  }
+}
+
+function isSessionUnauthorized(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401 && sessionErrorCodes.has(error.code);
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading');
@@ -24,11 +47,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const accessToken = useRef('');
   const refreshPromise = useRef<Promise<string> | null>(null);
 
+  const rememberUser = useCallback((next: SessionUser) => {
+    setUser(next);
+    setStatus('authenticated');
+    localStorage.setItem(USER_CACHE_KEY, JSON.stringify(next));
+  }, []);
+
   const clearSession = useCallback(() => {
     accessToken.current = '';
     setUser(null);
     setStatus('unauthenticated');
     localStorage.removeItem('moataz_token');
+    localStorage.removeItem(USER_CACHE_KEY);
   }, []);
 
   const refresh = useCallback(async (): Promise<string> => {
@@ -49,9 +79,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     void (async () => {
       const legacyToken = localStorage.getItem('moataz_token') ?? '';
       localStorage.removeItem('moataz_token');
+      const fallbackUser = cachedUser();
       try {
         let token = legacyToken;
         if (!token) token = await refresh();
@@ -59,18 +91,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           currentUser = await loadMe(token);
         } catch (error) {
-          if (!(error instanceof ApiError) || error.status !== 401 || !legacyToken) throw error;
+          if (!isSessionUnauthorized(error) || !legacyToken) throw error;
           token = await refresh();
           currentUser = await loadMe(token);
         }
+        if (cancelled) return;
         accessToken.current = token;
-        setUser(currentUser);
-        setStatus('authenticated');
-      } catch {
-        clearSession();
+        rememberUser(currentUser);
+      } catch (error) {
+        if (cancelled) return;
+        if (isSessionUnauthorized(error)) {
+          clearSession();
+          return;
+        }
+        if (fallbackUser) {
+          rememberUser(fallbackUser);
+          return;
+        }
+        setStatus('unauthenticated');
       }
     })();
-  }, [clearSession, loadMe, refresh]);
+    return () => { cancelled = true; };
+  }, [clearSession, loadMe, refresh, rememberUser]);
 
   const login = useCallback(async (input: LoginInput): Promise<void> => {
     const response = await apiRequest<LoginResponse>('/api/auth/login', {
@@ -78,9 +120,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       body: JSON.stringify(input)
     });
     accessToken.current = response.accessToken;
-    setUser(response.user);
-    setStatus('authenticated');
-  }, []);
+    rememberUser(response.user);
+  }, [rememberUser]);
 
   const logout = useCallback(async (): Promise<void> => {
     try {
@@ -93,24 +134,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const request = useCallback(async <T,>(path: string, options: RequestInit = {}): Promise<T> => {
     const execute = (token: string) => apiRequest<T>(path, { ...options, accessToken: token } as ApiRequestOptions);
     try {
-      return await execute(accessToken.current);
+      const token = accessToken.current || await refresh();
+      return await execute(token);
     } catch (error) {
-      if (!(error instanceof ApiError) || error.status !== 401) throw error;
+      if (!isSessionUnauthorized(error)) throw error;
       try {
         const token = await refresh();
         const result = await execute(token);
-        if (status !== 'authenticated') {
-          const currentUser = await loadMe(token);
-          setUser(currentUser);
-          setStatus('authenticated');
-        }
+        if (status !== 'authenticated') rememberUser(await loadMe(token));
         return result;
       } catch (refreshError) {
-        clearSession();
+        if (isSessionUnauthorized(refreshError)) clearSession();
         throw refreshError;
       }
     }
-  }, [clearSession, loadMe, refresh, status]);
+  }, [clearSession, loadMe, refresh, rememberUser, status]);
 
   return <AuthContext.Provider value={{ status, user, login, logout, request }}>{children}</AuthContext.Provider>;
 }
