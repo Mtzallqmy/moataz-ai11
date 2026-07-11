@@ -21,10 +21,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tar --exclude=.git --exclude=node_modules --exclude=dist --exclude=data --exclude=workspace -czf moataz-ai11-source.tar.gz .
+          tar --exclude=.git --exclude=node_modules --exclude=dist --exclude=data --exclude=workspace -czf /tmp/moataz-ai11-source.tar.gz .
       - name: Upload source archive
         uses: actions/upload-artifact@v4
         with:
           name: moataz-ai11-source
-          path: moataz-ai11-source.tar.gz
+          path: /tmp/moataz-ai11-source.tar.gz
           retention-days: 1
