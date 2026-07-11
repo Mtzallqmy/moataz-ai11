@@ -74,8 +74,10 @@
 ./server/src/providers/base-url.ts
 ./server/src/providers/diagnostics.ts
 ./server/src/providers/http.ts
+./server/src/providers/index.ts
 ./server/src/providers/model-discovery.ts
 ./server/src/providers/registry.ts
+./server/src/providers/service.ts
 ./server/src/providers/types.ts
 ./server/src/redaction.test.ts
 ./server/src/redaction.ts
@@ -263,6 +265,11 @@ server/src/providers/http.ts:122:    const upstreamRequestId = requestId(respons
 server/src/providers/http.ts:128:        upstreamRequestId
 server/src/providers/http.ts:137:      ...(upstreamRequestId ? { upstreamRequestId } : {})
 server/src/providers/base-url.ts:109:export function providerCatalogEntry(definition: ProviderDefinition) {
+server/src/providers/service.ts:128:      upstreamRequestId: result.upstreamRequestId,
+server/src/providers/service.ts:162:      ...(result.upstreamRequestId ? { upstreamRequestId: result.upstreamRequestId } : {})
+server/src/providers/service.ts:173:export async function* streamProviderChatCompletion(input: ProviderChatInput): AsyncIterable<ProviderStreamEvent> {
+server/src/providers/service.ts:177:  if (!adapter.streamChatCompletion) throw new AppError('provider_streaming_unsupported', 422, 'This provider adapter does not support streaming.');
+server/src/providers/service.ts:179:    yield* adapter.streamChatCompletion({ ...input, config });
 server/src/providers/registry.ts:19:    streaming: true,
 server/src/providers/registry.ts:55:    capabilities: { modelDiscovery: false, streaming: true, tools: true, vision: true, embeddings: false, responsesApi: false },
 server/src/providers/registry.ts:70:    capabilities: { modelDiscovery: true, streaming: true, tools: null, vision: true, embeddings: true, responsesApi: false },
