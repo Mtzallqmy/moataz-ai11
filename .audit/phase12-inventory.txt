@@ -35,6 +35,7 @@
 ./docs/providers-integrations-ar.md
 ./docs/terminal-protocol.md
 ./drizzle.config.ts
+./drizzle/0000_phase12_postgres.sql
 ./eslint.config.js
 ./package-lock.json
 ./package.json
@@ -512,6 +513,89 @@ client/src/pages/TerminalPage.tsx:9:type TerminalEvent = { type: 'session_starte
 ./DEPLOYMENT.md:61:For a long-running Railway service, use the Supabase pooler URL recommended for your deployment mode. Set `DATABASE_SSL_MODE=require` unless your certificate setup supports `verify-full`. The application never infers insecure TLS behavior from the hostname and never logs `DATABASE_URL`.
 ./DEPLOYMENT.md:126:  -e DATABASE_URL='<postgresql URL>' \
 ./DEPLOYMENT.md:127:  -e DATABASE_SSL_MODE=require \
+./drizzle/0000_phase12_postgres.sql:16:CREATE TABLE IF NOT EXISTS users (
+./drizzle/0000_phase12_postgres.sql:28:ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP;
+./drizzle/0000_phase12_postgres.sql:29:ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at timestamptz;
+./drizzle/0000_phase12_postgres.sql:30:ALTER TABLE users ALTER COLUMN is_active DROP DEFAULT;
+./drizzle/0000_phase12_postgres.sql:31:ALTER TABLE users ALTER COLUMN is_active TYPE boolean USING CASE WHEN lower(is_active::text) IN ('1','true','t','yes') THEN true ELSE false END;
+./drizzle/0000_phase12_postgres.sql:32:ALTER TABLE users ALTER COLUMN is_active SET DEFAULT true;
+./drizzle/0000_phase12_postgres.sql:33:ALTER TABLE users ALTER COLUMN is_active SET NOT NULL;
+./drizzle/0000_phase12_postgres.sql:35:CREATE TABLE IF NOT EXISTS providers (
+./drizzle/0000_phase12_postgres.sql:51:ALTER TABLE providers ADD COLUMN IF NOT EXISTS protocol varchar(40);
+./drizzle/0000_phase12_postgres.sql:52:ALTER TABLE providers ADD COLUMN IF NOT EXISTS raw_base_url text;
+./drizzle/0000_phase12_postgres.sql:53:ALTER TABLE providers ADD COLUMN IF NOT EXISTS normalized_base_url text;
+./drizzle/0000_phase12_postgres.sql:54:ALTER TABLE providers ADD COLUMN IF NOT EXISTS encryption_version integer NOT NULL DEFAULT 1;
+./drizzle/0000_phase12_postgres.sql:55:ALTER TABLE providers ADD COLUMN IF NOT EXISTS selected_model varchar(300);
+./drizzle/0000_phase12_postgres.sql:56:ALTER TABLE providers ADD COLUMN IF NOT EXISTS discovered_models jsonb NOT NULL DEFAULT '[]'::jsonb;
+./drizzle/0000_phase12_postgres.sql:57:ALTER TABLE providers ADD COLUMN IF NOT EXISTS capabilities jsonb NOT NULL DEFAULT '{}'::jsonb;
+./drizzle/0000_phase12_postgres.sql:58:ALTER TABLE providers ADD COLUMN IF NOT EXISTS status varchar(40) NOT NULL DEFAULT 'draft';
+./drizzle/0000_phase12_postgres.sql:59:ALTER TABLE providers ADD COLUMN IF NOT EXISTS last_check_status varchar(60);
+./drizzle/0000_phase12_postgres.sql:60:ALTER TABLE providers ADD COLUMN IF NOT EXISTS last_check_code varchar(120);
+./drizzle/0000_phase12_postgres.sql:61:ALTER TABLE providers ADD COLUMN IF NOT EXISTS last_check_message text;
+./drizzle/0000_phase12_postgres.sql:62:ALTER TABLE providers ADD COLUMN IF NOT EXISTS last_checked_at timestamptz;
+./drizzle/0000_phase12_postgres.sql:63:ALTER TABLE providers ADD COLUMN IF NOT EXISTS last_latency_ms integer;
+./drizzle/0000_phase12_postgres.sql:64:ALTER TABLE providers ADD COLUMN IF NOT EXISTS failure_count integer NOT NULL DEFAULT 0;
+./drizzle/0000_phase12_postgres.sql:65:ALTER TABLE providers ADD COLUMN IF NOT EXISTS next_retry_at timestamptz;
+./drizzle/0000_phase12_postgres.sql:66:ALTER TABLE providers ADD COLUMN IF NOT EXISTS is_enabled boolean NOT NULL DEFAULT true;
+./drizzle/0000_phase12_postgres.sql:67:ALTER TABLE providers ADD COLUMN IF NOT EXISTS is_ready boolean NOT NULL DEFAULT false;
+./drizzle/0000_phase12_postgres.sql:68:ALTER TABLE providers ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP;
+./drizzle/0000_phase12_postgres.sql:69:ALTER TABLE providers ALTER COLUMN is_active DROP DEFAULT;
+./drizzle/0000_phase12_postgres.sql:70:ALTER TABLE providers ALTER COLUMN is_active TYPE boolean USING CASE WHEN lower(is_active::text) IN ('1','true','t','yes') THEN true ELSE false END;
+./drizzle/0000_phase12_postgres.sql:71:ALTER TABLE providers ALTER COLUMN is_active SET DEFAULT true;
+./drizzle/0000_phase12_postgres.sql:72:ALTER TABLE providers ALTER COLUMN is_active SET NOT NULL;
+./drizzle/0000_phase12_postgres.sql:89:ALTER TABLE providers ALTER COLUMN protocol SET NOT NULL;
+./drizzle/0000_phase12_postgres.sql:91:CREATE TABLE IF NOT EXISTS provider_models (
+./drizzle/0000_phase12_postgres.sql:105:CREATE TABLE IF NOT EXISTS integrations (
+./drizzle/0000_phase12_postgres.sql:120:ALTER TABLE integrations ADD COLUMN IF NOT EXISTS meta_json jsonb NOT NULL DEFAULT '{}'::jsonb;
+./drizzle/0000_phase12_postgres.sql:121:ALTER TABLE integrations ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP;
+./drizzle/0000_phase12_postgres.sql:122:ALTER TABLE integrations ALTER COLUMN is_active DROP DEFAULT;
+./drizzle/0000_phase12_postgres.sql:123:ALTER TABLE integrations ALTER COLUMN is_active TYPE boolean USING CASE WHEN lower(is_active::text) IN ('1','true','t','yes') THEN true ELSE false END;
+./drizzle/0000_phase12_postgres.sql:124:ALTER TABLE integrations ALTER COLUMN is_active SET DEFAULT true;
+./drizzle/0000_phase12_postgres.sql:125:ALTER TABLE integrations ALTER COLUMN is_active SET NOT NULL;
+./drizzle/0000_phase12_postgres.sql:128:CREATE TABLE IF NOT EXISTS projects (
+./drizzle/0000_phase12_postgres.sql:137:CREATE TABLE IF NOT EXISTS chats (
+./drizzle/0000_phase12_postgres.sql:148:ALTER TABLE chats ADD COLUMN IF NOT EXISTS project_id text REFERENCES projects(id) ON DELETE SET NULL;
+./drizzle/0000_phase12_postgres.sql:149:ALTER TABLE chats ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP;
+./drizzle/0000_phase12_postgres.sql:151:CREATE TABLE IF NOT EXISTS workspaces (
+./drizzle/0000_phase12_postgres.sql:160:ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS project_id text REFERENCES projects(id) ON DELETE SET NULL;
+./drizzle/0000_phase12_postgres.sql:161:ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS chat_id text REFERENCES chats(id) ON DELETE SET NULL;
+./drizzle/0000_phase12_postgres.sql:162:ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS status varchar(30) NOT NULL DEFAULT 'active';
+./drizzle/0000_phase12_postgres.sql:163:ALTER TABLE workspaces ADD COLUMN IF NOT EXISTS storage_prefix text;
+./drizzle/0000_phase12_postgres.sql:164:ALTER TABLE workspaces ALTER COLUMN root_path DROP NOT NULL;
+./drizzle/0000_phase12_postgres.sql:166:CREATE TABLE IF NOT EXISTS files (
+./drizzle/0000_phase12_postgres.sql:180:CREATE TABLE IF NOT EXISTS messages (
+./drizzle/0000_phase12_postgres.sql:191:ALTER TABLE messages ADD COLUMN IF NOT EXISTS sequence bigint;
+./drizzle/0000_phase12_postgres.sql:192:ALTER TABLE messages ADD COLUMN IF NOT EXISTS tool_calls_json jsonb NOT NULL DEFAULT '[]'::jsonb;
+./drizzle/0000_phase12_postgres.sql:193:ALTER TABLE messages ADD COLUMN IF NOT EXISTS user_id text REFERENCES users(id) ON DELETE CASCADE;
+./drizzle/0000_phase12_postgres.sql:194:ALTER TABLE messages ADD COLUMN IF NOT EXISTS idempotency_key varchar(128);
+./drizzle/0000_phase12_postgres.sql:206:ALTER TABLE messages ALTER COLUMN sequence SET NOT NULL;
+./drizzle/0000_phase12_postgres.sql:208:CREATE TABLE IF NOT EXISTS attachments (
+./drizzle/0000_phase12_postgres.sql:221:CREATE TABLE IF NOT EXISTS agent_runs (
+./drizzle/0000_phase12_postgres.sql:233:ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS provider_id text REFERENCES providers(id) ON DELETE SET NULL;
+./drizzle/0000_phase12_postgres.sql:234:ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS model varchar(300);
+./drizzle/0000_phase12_postgres.sql:235:ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS finished_at timestamptz;
+./drizzle/0000_phase12_postgres.sql:236:ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS cancel_requested_at timestamptz;
+./drizzle/0000_phase12_postgres.sql:237:ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS input_tokens integer;
+./drizzle/0000_phase12_postgres.sql:238:ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS output_tokens integer;
+./drizzle/0000_phase12_postgres.sql:239:ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS total_tokens integer;
+./drizzle/0000_phase12_postgres.sql:240:ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS estimated_cost numeric(18,8);
+./drizzle/0000_phase12_postgres.sql:241:ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS error_message text;
+./drizzle/0000_phase12_postgres.sql:242:ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS summary jsonb NOT NULL DEFAULT '{}'::jsonb;
+./drizzle/0000_phase12_postgres.sql:243:ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP;
+./drizzle/0000_phase12_postgres.sql:249:ALTER TABLE agent_runs ALTER COLUMN user_id SET NOT NULL;
+./drizzle/0000_phase12_postgres.sql:251:CREATE TABLE IF NOT EXISTS agent_steps (
+./drizzle/0000_phase12_postgres.sql:267:CREATE TABLE IF NOT EXISTS tool_executions (
+./drizzle/0000_phase12_postgres.sql:282:CREATE TABLE IF NOT EXISTS refresh_tokens (
+./drizzle/0000_phase12_postgres.sql:293:ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS last_used_at timestamptz;
+./drizzle/0000_phase12_postgres.sql:295:CREATE TABLE IF NOT EXISTS websocket_tickets (
+./drizzle/0000_phase12_postgres.sql:305:CREATE TABLE IF NOT EXISTS audit_logs (
+./drizzle/0000_phase12_postgres.sql:319:    ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin','user'));
+./drizzle/0000_phase12_postgres.sql:322:    ALTER TABLE providers ADD CONSTRAINT providers_status_check CHECK (status IN ('draft','testing','ready','temporarily_unavailable','invalid_credentials','disabled','configuration_error'));
+./drizzle/0000_phase12_postgres.sql:325:    ALTER TABLE providers ADD CONSTRAINT providers_protocol_check CHECK (protocol IN ('openai-compatible','anthropic','gemini'));
+./drizzle/0000_phase12_postgres.sql:328:    ALTER TABLE providers ADD CONSTRAINT providers_failure_count_check CHECK (failure_count >= 0);
+./drizzle/0000_phase12_postgres.sql:331:    ALTER TABLE chats ADD CONSTRAINT chats_mode_check CHECK (mode IN ('chat','agent','multi-agent'));
+./drizzle/0000_phase12_postgres.sql:334:    ALTER TABLE messages ADD CONSTRAINT messages_role_check CHECK (role IN ('system','user','assistant','tool'));
+./drizzle/0000_phase12_postgres.sql:337:    ALTER TABLE agent_runs ADD CONSTRAINT agent_runs_status_check CHECK (status IN ('queued','running','completed','failed','cancelled'));
 ./vitest.integration.config.ts:15:      DATABASE_URL: 'file:./data/integration-test.db',
 ./package.json:29:    "better-sqlite3": "^11.7.0",
 ./package.json:47:    "@types/better-sqlite3": "^7.6.12",
