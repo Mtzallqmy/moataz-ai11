@@ -9,6 +9,7 @@ import { config } from './config.js';
 import { AppError } from './errors.js';
 import { redactSecrets } from './redaction.js';
 import { upstreamAppError } from './upstream-errors.js';
+import { fetchWithValidatedRedirects, htmlToText, readLimitedText } from './network.js';
 
 export type IntegrationCredential = {
   type: string;
@@ -179,7 +180,9 @@ const moveSchema = z.object({ from: z.string(), to: z.string() }).strict();
 const githubRepoSchema = z.object({ repo: z.string().regex(/^[^/\s]+\/[^/\s]+$/) }).strict();
 const githubIssueSchema = githubRepoSchema.extend({ title: z.string().min(1).max(256), body: z.string().max(65_536).default('') }).strict();
 const telegramSchema = z.object({ chatId: z.union([z.string(), z.number()]).optional(), text: z.string().min(1).max(4096) }).strict();
-const shellSchema = z.object({ command: z.string().min(1).max(8192) }).strict();
+const shellSchema = z.object({ command: z.string().min(1).max(8192), timeoutMs: z.number().int().min(1000).max(300_000).optional() }).strict();
+const webFetchSchema = z.object({ url: z.string().url().max(2048), maxChars: z.number().int().min(500).max(100_000).default(20_000) }).strict();
+const webSearchSchema = z.object({ query: z.string().trim().min(1).max(500), count: z.number().int().min(1).max(10).default(5) }).strict();
 
 async function listEntries(root: string, directory: string, recursive: boolean, maxDepth: number): Promise<Array<Record<string, unknown>>> {
   const output: Array<Record<string, unknown>> = [];
@@ -210,6 +213,14 @@ function requiredIntegration(context: ToolContext, type: string): IntegrationCre
   const integration = context.integrations?.find((entry) => entry.type === type);
   if (!integration) throw new AppError(`${type}_integration_not_configured`, 400);
   return integration;
+}
+
+function parseJsonPayload<T>(raw: string, service: string, status: number): T {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    throw new AppError('integration_invalid_response', 502, `${service} returned invalid JSON.`, { upstreamStatus: status });
+  }
 }
 
 const definitions: ToolDefinition[] = [
@@ -297,8 +308,65 @@ const definitions: ToolDefinition[] = [
     }
   },
   {
-    name: 'shell', description: 'Run a command in an external sandbox', risk: 'high', requiresConfirmation: true, roles: ['admin'], inputSchema: shellSchema,
-    execute: async () => { throw new AppError('shell_unavailable', 503); }
+    name: 'shell', description: 'Run a command in a configured external sandbox service', risk: 'high', requiresConfirmation: true, roles: ['admin'], inputSchema: shellSchema,
+    execute: async (args, context) => {
+      const input = shellSchema.parse(args);
+      const integration = requiredIntegration(context, 'sandbox');
+      const baseUrl = typeof integration.meta.baseUrl === 'string' ? integration.meta.baseUrl.trim().replace(/\/$/, '') : '';
+      if (!baseUrl) throw new AppError('sandbox_base_url_required', 400);
+      const response = await fetchWithValidatedRedirects(`${baseUrl}/v1/execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${integration.token}` },
+        body: JSON.stringify({ command: input.command, timeoutMs: input.timeoutMs ?? config.sandboxTimeoutMs, userId: context.userId })
+      }, { timeoutMs: input.timeoutMs ?? config.sandboxTimeoutMs, maxRedirects: 0 });
+      const text = await readLimitedText(response, config.maxToolOutputBytes);
+      let payload: unknown = text;
+      try { payload = JSON.parse(text) as unknown; } catch { /* return text */ }
+      if (!response.ok) throw new AppError('sandbox_execution_failed', 502, 'The sandbox execution failed.', { upstreamStatus: response.status, response: payload });
+      return { status: response.status, output: payload };
+    }
+  },
+  {
+    name: 'web_fetch', description: 'Fetch and extract readable text from a public HTTP or HTTPS page', risk: 'low', requiresConfirmation: false, roles: ['admin', 'user'], inputSchema: webFetchSchema,
+    execute: async (args) => {
+      const input = webFetchSchema.parse(args);
+      const response = await fetchWithValidatedRedirects(input.url, {
+        method: 'GET', headers: { Accept: 'text/html,application/xhtml+xml,application/json,text/plain;q=0.9,*/*;q=0.5', 'User-Agent': 'MoatazAI/1.0' }
+      }, { timeoutMs: config.webFetchTimeoutMs, maxRedirects: 3 });
+      const raw = await readLimitedText(response, config.maxWebFetchBytes);
+      const contentType = response.headers.get('content-type') ?? '';
+      const text = /text\/html|application\/xhtml\+xml/i.test(contentType) ? htmlToText(raw) : raw.trim();
+      if (!response.ok) throw new AppError('web_fetch_failed', 502, 'The page returned an error.', { upstreamStatus: response.status, url: response.url });
+      return { url: response.url, status: response.status, contentType, text: text.slice(0, input.maxChars), truncated: text.length > input.maxChars };
+    }
+  },
+  {
+    name: 'web_search', description: 'Search the public web using a verified Brave Search or Tavily integration', risk: 'low', requiresConfirmation: false, roles: ['admin', 'user'], inputSchema: webSearchSchema,
+    execute: async (args, context) => {
+      const input = webSearchSchema.parse(args);
+      const integration = context.integrations?.find((entry) => entry.type === 'brave_search' || entry.type === 'tavily');
+      if (!integration) throw new AppError('web_search_integration_not_configured', 400);
+      if (integration.type === 'brave_search') {
+        const url = new URL('https://api.search.brave.com/res/v1/web/search');
+        url.searchParams.set('q', input.query);
+        url.searchParams.set('count', String(input.count));
+        const response = await fetchWithValidatedRedirects(url.toString(), {
+          method: 'GET', headers: { Accept: 'application/json', 'X-Subscription-Token': integration.token }
+        }, { timeoutMs: config.webFetchTimeoutMs, maxRedirects: 0 });
+        const raw = await readLimitedText(response, config.maxWebFetchBytes);
+        const payload = parseJsonPayload<{ web?: { results?: Array<{ title?: string; url?: string; description?: string }> } }>(raw, 'Brave Search', response.status);
+        if (!response.ok) throw new AppError('web_search_failed', 502, 'Brave Search returned an error.', { upstreamStatus: response.status });
+        return { provider: 'brave_search', results: (payload.web?.results ?? []).slice(0, input.count).map((item) => ({ title: item.title ?? '', url: item.url ?? '', snippet: item.description ?? '' })) };
+      }
+      const response = await fetchWithValidatedRedirects('https://api.tavily.com/search', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: integration.token, query: input.query, max_results: input.count, search_depth: 'basic' })
+      }, { timeoutMs: config.webFetchTimeoutMs, maxRedirects: 0 });
+      const raw = await readLimitedText(response, config.maxWebFetchBytes);
+      const payload = parseJsonPayload<{ results?: Array<{ title?: string; url?: string; content?: string }> }>(raw, 'Tavily', response.status);
+      if (!response.ok) throw new AppError('web_search_failed', 502, 'Tavily returned an error.', { upstreamStatus: response.status });
+      return { provider: 'tavily', results: (payload.results ?? []).slice(0, input.count).map((item) => ({ title: item.title ?? '', url: item.url ?? '', snippet: item.content ?? '' })) };
+    }
   },
   {
     name: 'github_repo_info', description: 'Read GitHub repository metadata', risk: 'low', requiresConfirmation: false, roles: ['admin', 'user'], inputSchema: githubRepoSchema,
@@ -347,8 +415,24 @@ const definitions: ToolDefinition[] = [
   }
 ];
 
+const toolParameters: Record<string, Record<string, unknown>> = {
+  list_files: { type: 'object', additionalProperties: false, properties: { path: { type: 'string' }, recursive: { type: 'boolean' }, maxDepth: { type: 'integer', minimum: 0 } } },
+  read_file: { type: 'object', additionalProperties: false, required: ['path'], properties: { path: { type: 'string' } } },
+  write_file: { type: 'object', additionalProperties: false, required: ['path', 'content'], properties: { path: { type: 'string' }, content: { type: 'string' } } },
+  create_directory: { type: 'object', additionalProperties: false, required: ['path'], properties: { path: { type: 'string' } } },
+  delete_file: { type: 'object', additionalProperties: false, required: ['path'], properties: { path: { type: 'string' } } },
+  move_path: { type: 'object', additionalProperties: false, required: ['from', 'to'], properties: { from: { type: 'string' }, to: { type: 'string' } } },
+  file_stat: { type: 'object', additionalProperties: false, required: ['path'], properties: { path: { type: 'string' } } },
+  shell: { type: 'object', additionalProperties: false, required: ['command'], properties: { command: { type: 'string' }, timeoutMs: { type: 'integer', minimum: 1000, maximum: 300000 } } },
+  web_fetch: { type: 'object', additionalProperties: false, required: ['url'], properties: { url: { type: 'string', format: 'uri' }, maxChars: { type: 'integer', minimum: 500, maximum: 100000 } } },
+  web_search: { type: 'object', additionalProperties: false, required: ['query'], properties: { query: { type: 'string' }, count: { type: 'integer', minimum: 1, maximum: 10 } } },
+  github_repo_info: { type: 'object', additionalProperties: false, required: ['repo'], properties: { repo: { type: 'string' } } },
+  github_create_issue: { type: 'object', additionalProperties: false, required: ['repo', 'title'], properties: { repo: { type: 'string' }, title: { type: 'string' }, body: { type: 'string' } } },
+  telegram_send: { type: 'object', additionalProperties: false, required: ['text'], properties: { chatId: { anyOf: [{ type: 'string' }, { type: 'number' }] }, text: { type: 'string' } } }
+};
+
 export const toolRegistry = new Map(definitions.map((definition) => [definition.name, definition] as const));
-export const toolCatalog = definitions.map(({ name, description, risk, requiresConfirmation, roles }) => ({ name, description, risk, requiresConfirmation, roles }));
+export const toolCatalog = definitions.map(({ name, description, risk, requiresConfirmation, roles }) => ({ name, description, risk, requiresConfirmation, roles, parameters: toolParameters[name] ?? { type: 'object', additionalProperties: true } }));
 
 export async function runTool(name: string, args: unknown, context: ToolContext): Promise<unknown> {
   const definition = toolRegistry.get(name);

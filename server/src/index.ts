@@ -2,7 +2,7 @@ import http, { type IncomingMessage, type ServerResponse } from 'node:http';
 import { config } from './config.js';
 import { logger } from './logger.js';
 import type { TerminalController } from './terminal.js';
-import type { TelegramController } from './telegram.js';
+import type { TelegramController, TelegramStatus } from './telegram.js';
 
 async function listen(server: http.Server): Promise<void> {
   await new Promise<void>((resolve, reject) => {
@@ -91,15 +91,15 @@ async function startApplication(): Promise<void> {
 
   await databaseModule.migrate();
 
-  let telegram: TelegramController = { enabled: false, botCount: 0, close: async () => undefined };
-  let telegramReload: Promise<{ enabled: boolean; botCount: number }> | undefined;
-  const reloadTelegram = async (): Promise<{ enabled: boolean; botCount: number }> => {
-    if (!config.telegramPolling) return { enabled: false, botCount: 0 };
+  let telegram: TelegramController = { enabled: false, botCount: 0, configuredCount: 0, discoveryOnlyCount: 0, close: async () => undefined };
+  let telegramReload: Promise<TelegramStatus> | undefined;
+  const reloadTelegram = async (): Promise<TelegramStatus> => {
+    if (!config.telegramPolling) return { enabled: false, botCount: 0, configuredCount: 0, discoveryOnlyCount: 0 };
     if (!telegramReload) {
       telegramReload = (async () => {
         await telegram.close();
         telegram = await telegramModule.startTelegramPolling();
-        return { enabled: telegram.enabled, botCount: telegram.botCount };
+        return { enabled: telegram.enabled, botCount: telegram.botCount, configuredCount: telegram.configuredCount, discoveryOnlyCount: telegram.discoveryOnlyCount };
       })().finally(() => { telegramReload = undefined; });
     }
     return telegramReload;
@@ -107,7 +107,7 @@ async function startApplication(): Promise<void> {
 
   const terminalHolder: { current?: TerminalController } = {};
   const app = appModule.createApp({
-    telegram: () => ({ enabled: telegram.enabled, botCount: telegram.botCount }),
+    telegram: () => ({ enabled: telegram.enabled, botCount: telegram.botCount, configuredCount: telegram.configuredCount, discoveryOnlyCount: telegram.discoveryOnlyCount }),
     terminal: () => ({ enabled: config.shellAvailable, activeConnections: terminalHolder.current?.activeConnections() ?? 0 }),
     reloadTelegram
   });
@@ -167,7 +167,8 @@ async function startApplication(): Promise<void> {
     databaseKind: config.databaseKind,
     shellEnabled: config.shellAvailable,
     telegramEnabled: telegram.enabled,
-    telegramBotCount: telegram.botCount
+    telegramBotCount: telegram.botCount,
+    telegramDiscoveryOnlyCount: telegram.discoveryOnlyCount
   });
 }
 

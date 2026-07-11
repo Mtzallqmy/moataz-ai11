@@ -2,18 +2,27 @@
 
 All notable changes are documented here. The project version is synchronized with `package.json`.
 
-## Unreleased — production provider and UX hardening
+## [1.3.0] — 2026-07-11
 
-- Separated provider persistence from paid upstream validation; providers are saved as `untested` and tested explicitly.
-- Added structured upstream error mapping for authentication, authorization, billing/credits, missing models, rate limits, timeouts, network failures, and provider outages.
-- Added persisted provider and integration validation status, error code, and validation timestamp through additive compatibility migrations.
-- Added provider update/test/delete behavior and safely detached deleted providers from conversations.
-- Added per-conversation provider, model, and chat/agent mode selection with clearer recovery from stale provider references.
-- Separated GitHub/Telegram token persistence from validation, normalized token formats, and added real identity checks.
-- Restricted tools and Telegram polling to verified integrations and added dynamic Telegram bot reload after validation, edits, or deletion.
-- Added Telegram allowed-chat-ID handling and safer polling startup/error isolation.
-- Reorganized the React interface into focused pages, improved mobile navigation and layout, added status badges, structured error messages, request IDs, and a terminal availability check.
-- Added regression coverage for upstream error classification, provider persistence without upstream billing, integration persistence, token normalization, and Telegram API error payloads.
+### Provider platform v2
+
+- Added a central provider catalog with editable presets for OpenAI, OpenRouter, Anthropic, Gemini, NVIDIA NIM, Hugging Face Router, Groq, Together, DeepSeek, Mistral, xAI, Cerebras, SambaNova, Fireworks, DeepInfra, Perplexity, Ollama, and arbitrary OpenAI-compatible endpoints.
+- Added real model discovery through the OpenAI-compatible `/models` API while retaining manual model entry for providers that do not expose a model list.
+- Required successful provider verification before chat or Telegram can use a provider.
+- Added official function/tool calling for OpenAI-compatible providers, with a bounded agent loop and legacy fallback for providers without native tool calling.
+- Added safe public-page fetching with redirect, timeout, response-size, protocol, credential, DNS, and private-address checks.
+- Added Brave Search and Tavily integrations and a `web_search` agent tool.
+- Reworked Telegram polling so verified bots start in discovery mode when no chat ID is configured, persist discovered chats, show the Chat ID to the user, and allow chats to be approved from the interface.
+- Added explicit `allowAllChats` support with a warning and restricted Telegram processing to verified AI providers.
+- Added a verified external-sandbox integration contract and production terminal execution through that sandbox; in-process Railway shell execution remains disabled.
+- Expanded structured upstream errors, provider/integration UI, responsive layouts, model suggestions, Telegram discovery controls, and terminal diagnostics.
+- Added provider-catalog, network-guard, Telegram discovery, and sandbox regression coverage.
+
+### Previous production hardening
+
+- Separated provider and integration persistence from paid validation and added encrypted stored credentials with explicit status.
+- Added structured upstream error mapping for authentication, authorization, billing, missing models, rate limits, timeouts, network failures, and outages.
+- Added update/test/delete flows, stale-provider recovery, per-chat provider/model/mode selection, and responsive mobile navigation.
 
 ## [1.2.0] — 2026-07-10
 
@@ -40,5 +49,5 @@ All notable changes are documented here. The project version is synchronized wit
 ### Deferred
 
 - Drizzle/PostgreSQL migrations and removal of the SQLite compatibility layer (phase 2).
-- Formal provider-specific tool calling, streaming, full persisted agent loop, cancellation, and SSRF controls (phase 3).
-- Full feature-based frontend split and phase-4 UX scope.
+- Streaming responses, cancellation, resumable persisted agent checkpoints, and provider-native tools for Anthropic/Gemini remain future work.
+- The external sandbox service is a separate security boundary and is not bundled into the Railway application container.

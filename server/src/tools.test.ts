@@ -49,7 +49,7 @@ describe('workspace file tools', () => {
     await expect(runTool('read_file', { path: 'private.txt' }, other)).rejects.toBeDefined();
   });
 
-  it('keeps shell unavailable without an external sandbox', async () => {
-    await expect(runTool('shell', { command: 'pwd' }, { ...context, role: 'admin', confirmed: true })).rejects.toMatchObject({ code: 'shell_unavailable' });
+  it('requires a verified external sandbox for shell execution', async () => {
+    await expect(runTool('shell', { command: 'pwd' }, { ...context, role: 'admin', confirmed: true })).rejects.toMatchObject({ code: 'sandbox_integration_not_configured' });
   });
 });

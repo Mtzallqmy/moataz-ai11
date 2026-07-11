@@ -277,3 +277,21 @@ label small { line-height: 1.6; }
   .identity-card dd, .definition-list dd { margin-bottom: 8px; }
   .terminal-input { grid-template-columns: 1fr; }
 }
+
+.provider-actions { flex-wrap: wrap; }
+.provider-capability-note { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; margin-top: 16px; padding: 12px 14px; border: 1px dashed var(--border); border-radius: 14px; color: var(--muted); }
+.provider-capability-note strong { color: var(--primary-2); }
+.provider-capability-note code { max-width: 100%; overflow-wrap: anywhere; }
+.checkbox-row { min-height: 48px; display: flex; flex-direction: row; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid rgba(246, 184, 75, 0.34); border-radius: 14px; background: rgba(246, 184, 75, 0.06); }
+.checkbox-row input { width: 20px; min-height: 20px; margin: 0; }
+.resource-card-wide { align-items: flex-start; }
+.discovered-chats { display: grid; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.discovered-chat { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255, 255, 255, 0.025); }
+.discovered-chat > span:first-child { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.discovered-chat code { display: inline-block; margin: 0; }
+
+@media (max-width: 620px) {
+  .provider-actions { grid-template-columns: 1fr; }
+  .discovered-chat { align-items: stretch; flex-direction: column; }
+  .discovered-chat button { width: 100%; }
+}
