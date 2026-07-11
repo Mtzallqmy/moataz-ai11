@@ -1096,11 +1096,10 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
 
     let runId: string | undefined;
     let userMessageId: string | undefined;
-    let attachmentIds: string[] = [];
     let locked = false;
     try {
       const input = parseInput(messageSchema, req.body);
-      attachmentIds = input.attachmentIds ?? [];
+      const attachmentIds = input.attachmentIds ?? [];
       const key = idempotencyKey(req, input.idempotencyKey);
       const chat = await get<ChatRow>('SELECT * FROM chats WHERE id = ? AND user_id = ?', [chatId, req.user!.id]);
       if (!chat) throw new AppError('chat_not_found', 404);
@@ -1225,6 +1224,61 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
                 record.result = result;
                 record.finishedAt = new Date().toISOString();
               } catch (error) {
+                record.status = 'failed';
+                record.error = { code: errorCode(error), message: redactText(errorMessage(error)) };
+                record.finishedAt = new Date().toISOString();
+              }
+              messages.push({
+                role: 'tool',
+                toolCallId: call.id,
+                name: call.name,
+                content: JSON.stringify({ status: record.status, result: record.result, error: record.error })
+              });
+            }
+            step = await completeWithModelRecovery({
+              provider: selectedProvider,
+              providerId: chat.provider_id,
+              userId: req.user!.id,
+              chatId,
+              messages,
+              model: chat.model ?? selectedProvider.defaultModel,
+              tools: availableTools
+            });
+          }
+          if (step.toolCalls.length > 0 || parseLegacyToolCall(step.text)) {
+            throw new AppError('agent_iteration_limit', 409, 'The agent reached the tool iteration limit.');
+          }
+        }
+        answer = step.text.trim();
+      }
+
+      if (!answer) throw new LLMError('provider_empty_response', 502, 'The provider returned an empty response.');
+
+      const assistantMessageId = cryptoId();
+      await transaction([
+        {
+          sql: 'INSERT INTO messages (id, chat_id, user_id, role, content, tool_calls, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          params: [assistantMessageId, chatId, req.user!.id, 'assistant', answer, serializeToolCalls(toolCalls), key]
+        },
+        {
+          sql: 'UPDATE chats SET updated_at = CURRENT_TIMESTAMP, title = CASE WHEN title = ? THEN ? ELSE title END WHERE id = ? AND user_id = ?',
+          params: ['New chat', (input.content || attachmentRows[0]?.name || 'Attachment').slice(0, 60), chatId, req.user!.id]
+        },
+        {
+          sql: 'UPDATE agent_runs SET status = ?, log = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+          params: ['completed', JSON.stringify({ mode: chat.mode, toolCalls: toolCalls.length }), runId, req.user!.id]
+        }
+      ]);
+
+      const attachmentSummaries = attachmentRows.map(summarizeAttachment);
+      res.status(201).json({
+        userMessage: { id: userMessageId, role: 'user', content: displayContent, tool_calls: [], attachments: attachmentSummaries },
+        message: { id: assistantMessageId, role: 'assistant', content: answer, tool_calls: toolCalls, attachments: [] },
+        run: { id: runId, status: 'completed' },
+        idempotencyKey: key,
+        replayed: false
+      });
+    } catch (error) {
     if (userMessageId) {
       await transaction([
         {
