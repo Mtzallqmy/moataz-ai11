@@ -133,12 +133,23 @@ const baseStatements = [
     name TEXT NOT NULL,
     type TEXT NOT NULL,
     base_url TEXT,
+    raw_base_url TEXT,
+    normalized_base_url TEXT,
+    protocol TEXT,
     api_key_enc TEXT NOT NULL,
+    encryption_version INTEGER NOT NULL DEFAULT 1,
     default_model TEXT NOT NULL,
-    validation_status TEXT NOT NULL DEFAULT 'untested',
+    discovered_models TEXT,
+    capabilities TEXT,
+    validation_status TEXT NOT NULL DEFAULT 'draft',
     validation_error_code TEXT,
+    last_check_message TEXT,
     validated_at TIMESTAMP,
+    last_latency_ms INTEGER,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at TIMESTAMP,
     is_active INTEGER NOT NULL DEFAULT 1,
+    is_ready INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -176,8 +187,13 @@ const baseStatements = [
     meta TEXT,
     validation_status TEXT NOT NULL DEFAULT 'untested',
     validation_error_code TEXT,
+    last_check_message TEXT,
     validated_at TIMESTAMP,
+    last_latency_ms INTEGER,
+    failure_count INTEGER NOT NULL DEFAULT 0,
+    next_retry_at TIMESTAMP,
     is_active INTEGER NOT NULL DEFAULT 1,
+    is_ready INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -249,7 +265,18 @@ export async function migrate(): Promise<void> {
   await addColumn('agent_runs', 'error_code TEXT');
   await addColumn('agent_runs', 'started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP');
   await addColumn('agent_runs', 'completed_at TIMESTAMP');
-  await addColumn('providers', "validation_status TEXT NOT NULL DEFAULT 'untested'");
+  await addColumn('providers', "validation_status TEXT NOT NULL DEFAULT 'draft'");
+  await addColumn('providers', 'raw_base_url TEXT');
+  await addColumn('providers', 'normalized_base_url TEXT');
+  await addColumn('providers', 'protocol TEXT');
+  await addColumn('providers', 'encryption_version INTEGER NOT NULL DEFAULT 1');
+  await addColumn('providers', 'discovered_models TEXT');
+  await addColumn('providers', 'capabilities TEXT');
+  await addColumn('providers', 'last_check_message TEXT');
+  await addColumn('providers', 'last_latency_ms INTEGER');
+  await addColumn('providers', 'failure_count INTEGER NOT NULL DEFAULT 0');
+  await addColumn('providers', 'next_retry_at TIMESTAMP');
+  await addColumn('providers', 'is_ready INTEGER NOT NULL DEFAULT 0');
   await addColumn('providers', 'validation_error_code TEXT');
   await addColumn('providers', 'validated_at TIMESTAMP');
   await addColumn('providers', 'updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP');
@@ -260,6 +287,8 @@ export async function migrate(): Promise<void> {
 
   await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.2.0', 'phase1-1.2.0']);
   await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.3.0', 'phase1-1.3.0']);
+  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['providers-2.0.0', 'providers-2.0.0']);
+  await run("UPDATE providers SET validation_status = CASE WHEN validation_status = 'verified' THEN 'ready' WHEN validation_status = 'failed' THEN 'configuration_error' WHEN validation_status = 'untested' THEN 'draft' ELSE validation_status END, is_ready = CASE WHEN validation_status IN ('verified', 'ready') THEN 1 ELSE is_ready END");
 
   const existing = await get<{ id: string }>('SELECT id FROM users WHERE email = ?', [config.defaultAdminEmail]);
   if (!existing) {

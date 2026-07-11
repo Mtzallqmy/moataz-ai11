@@ -30,14 +30,14 @@ export function ChatPage({ request, t, language, onNavigate }: { request: Reques
   const messagesRef = useRef<HTMLDivElement>(null);
 
   const currentChat = useMemo(() => chats.find((chat) => chat.id === current), [chats, current]);
-  const verifiedProviders = useMemo(() => providers.filter((provider) => provider.validation_status === 'verified'), [providers]);
+  const verifiedProviders = useMemo(() => providers.filter((provider) => provider.validation_status === 'ready' || provider.is_ready === true), [providers]);
   const selectedProviderRecord = useMemo(() => providers.find((provider) => provider.id === selectedProvider), [providers, selectedProvider]);
-  const providerReady = selectedProviderRecord?.validation_status === 'verified';
+  const providerReady = selectedProviderRecord?.validation_status === 'ready' || selectedProviderRecord?.is_ready === true;
 
   const loadProviders = useCallback(async () => {
     const response = await request<{ providers: ProviderSummary[] }>('/api/providers');
     setProviders(response.providers);
-    const firstVerified = response.providers.find((provider) => provider.validation_status === 'verified');
+    const firstVerified = response.providers.find((provider) => provider.validation_status === 'ready' || provider.is_ready === true);
     if (!selectedProvider && firstVerified) {
       setSelectedProvider(firstVerified.id);
       setSelectedModel(firstVerified.default_model);
@@ -168,7 +168,7 @@ export function ChatPage({ request, t, language, onNavigate }: { request: Reques
 
         <section className="conversation-panel">
           <div className="conversation-toolbar">
-            <label><span>{t('selectProvider')}</span><select value={selectedProvider} onChange={(event) => { void changeProvider(event.target.value); }} disabled={providers.length === 0}><option value="">—</option>{providers.map((provider) => <option key={provider.id} value={provider.id} disabled={provider.validation_status !== 'verified'}>{provider.name} · {provider.type} · {provider.validation_status === 'verified' ? t('verified') : t('untested')}</option>)}</select></label>
+            <label><span>{t('selectProvider')}</span><select value={selectedProvider} onChange={(event) => { void changeProvider(event.target.value); }} disabled={providers.length === 0}><option value="">—</option>{providers.map((provider) => <option key={provider.id} value={provider.id} disabled={provider.validation_status !== 'ready' && provider.is_ready !== true}>{provider.name} · {provider.type} · {provider.validation_status === 'ready' || provider.is_ready === true ? t('verified') : t('untested')}</option>)}</select></label>
             <label><span>{t('selectModel')}</span><input value={selectedModel} onChange={(event) => setSelectedModel(event.target.value)} onBlur={() => { if (current) void updateConversation({ model: selectedModel || null }); }} /></label>
             <label><span>{t('chatMode')}</span><select value={mode} onChange={(event) => { const next = event.target.value as 'chat' | 'agent'; setMode(next); if (current) void updateConversation({ mode: next }); }}><option value="agent">{t('agentMode')}</option><option value="chat">{t('simpleChat')}</option></select></label>
             {current && <button type="button" className="danger ghost compact" onClick={() => { void deleteChat(); }}>{t('delete')}</button>}

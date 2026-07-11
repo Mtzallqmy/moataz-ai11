@@ -12,7 +12,7 @@ import {
 import { config } from './config.js';
 import { AppError } from './errors.js';
 import { logger } from './logger.js';
-import { failedProviderDiagnostic } from './provider-diagnostics.js';
+import { diagnoseProviderError } from './providers/diagnostics.js';
 import { redactSecrets, redactText } from './redaction.js';
 import { runTool, toolCatalog, type IntegrationCredential, type ToolRole } from './tools.js';
 
@@ -197,7 +197,7 @@ async function providerForTelegram(userId: string, meta: Record<string, unknown>
   if (requested) {
     const selected = await get<ProviderRow>(
       `SELECT id, type, api_key_enc, base_url, default_model, name
-       FROM providers WHERE id = ? AND user_id = ? AND is_active = 1 AND validation_status = 'verified'`,
+       FROM providers WHERE id = ? AND user_id = ? AND is_active = 1 AND validation_status = 'ready' AND is_ready = 1`,
       [requested, userId]
     );
     if (selected) return selected;
@@ -229,7 +229,7 @@ async function roleForUser(userId: string): Promise<ToolRole> {
 async function integrationsForUser(userId: string): Promise<IntegrationCredential[]> {
   const rows = await query<VerifiedIntegrationRow>(
     `SELECT type, token_enc, meta FROM integrations
-     WHERE user_id = ? AND is_active = 1 AND validation_status = 'verified'`,
+     WHERE user_id = ? AND is_active = 1 AND validation_status = 'ready' AND is_ready = 1`,
     [userId]
   );
   return rows.map((entry) => ({ type: entry.type, token: decrypt(entry.token_enc), meta: parseMeta(entry.meta) }));
@@ -306,24 +306,12 @@ async function sendChunks(bot: TelegramBot, chatId: number, text: string, withMe
 }
 
 function explicitProviderError(providerType: string, error: unknown): string {
-  const diagnostic = failedProviderDiagnostic(providerType, error);
-  const stageText: Record<string, string> = {
-    authentication: 'المفتاح أو التوكن غير صحيح أو تم إلغاؤه.',
-    authorization: 'المفتاح معروف لكنه لا يملك صلاحية النموذج أو المورد.',
-    billing: 'المزوّد طلب رصيدًا أو دفعًا. المفتاح قد يكون صحيحًا لكن الحساب لا يملك رصيدًا كافيًا.',
-    rate_limit: 'تم بلوغ حد الطلبات أو التوكنات. انتظر ثم أعد المحاولة.',
-    model_not_found: 'اسم النموذج غير موجود أو غير متاح لهذا الحساب.',
-    invalid_request: 'الرابط أو اسم النموذج أو صيغة الطلب غير صحيحة.',
-    timeout: 'انتهت مهلة الاتصال بالمزوّد.',
-    network: 'تعذر الوصول إلى عنوان المزوّد أو فشل DNS/TLS.',
-    service_unavailable: 'خدمة المزوّد غير متاحة مؤقتًا.',
-    unknown: 'أعاد المزوّد خطأ غير مصنف.'
-  };
+  const diagnostic = diagnoseProviderError(error, { context: 'inference' });
   const details = error instanceof AppError ? objectRecord(error.details) : {};
   const providerMessage = typeof details.providerMessage === 'string'
     ? `\nرسالة المزوّد: ${redactText(details.providerMessage).slice(0, 700)}`
     : '';
-  return `❌ فشل المزوّد ${providerType}\n${stageText[diagnostic.errorStage ?? 'unknown'] ?? diagnostic.note}${providerMessage}\nقابل لإعادة المحاولة: ${diagnostic.retryable ? 'نعم' : 'لا'}`;
+  return `❌ فشل المزوّد ${providerType}\n${diagnostic.userMessageAr}${providerMessage}\nالحالة: ${diagnostic.status}\nقابل لإعادة المحاولة: ${diagnostic.retryable ? 'نعم' : 'لا'}`;
 }
 
 async function sendStatus(bot: TelegramBot, row: IntegrationRow, chatId: number, session: TelegramSession): Promise<void> {
@@ -337,8 +325,8 @@ async function sendStatus(bot: TelegramBot, row: IntegrationRow, chatId: number,
     [row.user_id]
   );
   const selected = providers.find((provider) => provider.id === session.providerId)
-    ?? providers.find((provider) => provider.validation_status === 'verified');
-  const verifiedProviders = providers.filter((provider) => provider.validation_status === 'verified').length;
+    ?? providers.find((provider) => provider.validation_status === 'ready');
+  const verifiedProviders = providers.filter((provider) => provider.validation_status === 'ready').length;
   const verifiedIntegrations = integrations.filter((integration) => integration.validation_status === 'verified');
   const integrationTypes = [...new Set(verifiedIntegrations.map((integration) => integration.type))];
   const text = [
@@ -361,9 +349,9 @@ async function sendProviders(bot: TelegramBot, row: IntegrationRow, chatId: numb
      FROM providers WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC`,
     [row.user_id]
   );
-  const verified = providers.filter((provider) => provider.validation_status === 'verified');
+  const verified = providers.filter((provider) => provider.validation_status === 'ready');
   if (verified.length === 0) {
-    const failed = providers.filter((provider) => provider.validation_status === 'failed');
+    const failed = providers.filter((provider) => !['ready', 'draft', 'testing'].includes(provider.validation_status));
     const failures = failed.map((provider) => `• ${provider.name}: ${provider.validation_error_code ?? 'failed'}`).join('\n');
     await bot.sendMessage(chatId, `لا يوجد مزوّد تم اختباره بنجاح.${failures ? `\n${failures}` : ''}`, {
       reply_markup: { inline_keyboard: [[{ text: 'فتح إعدادات المزوّدات', url: pageUrl('providers') }]] }
@@ -401,7 +389,7 @@ async function diagnoseProvider(bot: TelegramBot, row: IntegrationRow, chatId: n
       const models = await listProviderModels(provider);
       modelStatus = models.supported ? `${models.models.length} نموذجًا متاحًا عبر /models` : 'المزوّد لا يوفر قائمة نماذج عامة';
     } catch (error) {
-      modelStatus = `تعذر تحميل قائمة النماذج: ${failedProviderDiagnostic(providerRow.type, error).errorStage ?? 'unknown'}`;
+      modelStatus = `تعذر تحميل قائمة النماذج: ${diagnoseProviderError(error, { context: 'discovery' }).status}`;
     }
     await sendChunks(bot, chatId, [
       `✅ المفتاح يعمل فعليًا مع ${providerRow.name}`,
@@ -650,7 +638,7 @@ async function handleCallback(bot: TelegramBot, row: IntegrationRow, queryValue:
     const providerId = data.slice('provider:'.length);
     const provider = await get<ProviderRow>(
       `SELECT id, type, api_key_enc, base_url, default_model, name FROM providers
-       WHERE id = ? AND user_id = ? AND is_active = 1 AND validation_status = 'verified'`,
+       WHERE id = ? AND user_id = ? AND is_active = 1 AND validation_status = 'ready' AND is_ready = 1`,
       [providerId, row.user_id]
     );
     if (!provider) {

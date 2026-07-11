@@ -75,7 +75,8 @@ export async function fetchWithValidatedRedirects(
     const timer = setTimeout(() => controller.abort(new Error('outbound_timeout')), options.timeoutMs);
     timer.unref();
     try {
-      const response = await fetch(url, { ...init, redirect: 'manual', signal: controller.signal });
+      const signals = [controller.signal, ...(init.signal ? [init.signal] : [])];
+      const response = await fetch(url, { ...init, redirect: 'manual', signal: signals.length === 1 ? controller.signal : AbortSignal.any(signals) });
       if (response.status >= 300 && response.status < 400) {
         const location = response.headers.get('location');
         if (!location) return response;

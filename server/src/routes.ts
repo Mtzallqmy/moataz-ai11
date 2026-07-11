@@ -2,7 +2,7 @@ import type { Express, NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import { query, get, run, cryptoId, transaction, ping, getMigrationStatus, type DbRow } from './db.js';
 import { decrypt, encrypt } from './crypto.js';
-import { completeAgentStep, listProviderModels, LLMError, testProviderConnection, type Msg, type Provider } from './llm.js';
+import { completeAgentStep, LLMError, type Msg, type Provider } from './llm.js';
 import { runTool, toolCatalog, toolRegistry, type IntegrationCredential } from './tools.js';
 import { auth, type AuthRequest } from './auth.js';
 import { config } from './config.js';
@@ -14,8 +14,9 @@ import { parseToolCalls, serializeToolCalls, type ToolCallRecord } from './tool-
 import { redactText } from './redaction.js';
 import { appVersion } from './version.js';
 import { upstreamAppError } from './upstream-errors.js';
-import { assertProviderCredentials, providerCatalog, resolveProviderBaseUrl } from './providers.js';
-import { providerErrorWithDiagnostic, successfulProviderDiagnostic } from './provider-diagnostics.js';
+import { providerCatalog } from './providers.js';
+import { diagnoseProviderError, diagnosticToAppError } from './providers/diagnostics.js';
+import { discoverModels, testProvider, normalizedRuntimeConfig, type ProviderRuntimeInput, type ProviderStatus } from './providers/index.js';
 import { fetchWithValidatedRedirects, readLimitedText } from './network.js';
 import type { TelegramStatus } from './telegram.js';
 
@@ -52,6 +53,12 @@ const providerModelsSchema = z.object({
   type: providerTypeSchema,
   baseUrl: optionalBaseUrlSchema,
   apiKey: z.string().trim().max(20_000).default('')
+}).strict();
+
+const providerNormalizeSchema = z.object({
+  type: providerTypeSchema,
+  baseUrl: z.string().trim().min(1).max(2048),
+  model: z.string().trim().max(200).optional()
 }).strict();
 
 const integrationTypeSchema = z.enum(['github', 'telegram', 'brave_search', 'tavily', 'sandbox']);
@@ -113,11 +120,22 @@ type ProviderRow = DbRow & {
   name: string;
   type: string;
   base_url: string | null;
+  raw_base_url: string | null;
+  normalized_base_url: string | null;
+  protocol: string | null;
   api_key_enc: string;
   default_model: string;
-  validation_status: string;
+  discovered_models: string | null;
+  capabilities: string | null;
+  validation_status: ProviderStatus | string;
   validation_error_code: string | null;
+  last_check_message: string | null;
   validated_at: string | null;
+  last_latency_ms: number | null;
+  failure_count: number;
+  next_retry_at: string | null;
+  is_active: number | boolean;
+  is_ready: number | boolean;
 };
 
 type IntegrationRow = DbRow & {
@@ -186,7 +204,7 @@ function providerFromRow(row: ProviderRow): Provider {
   return {
     type: row.type,
     apiKey: decrypt(row.api_key_enc),
-    ...(row.base_url ? { baseUrl: row.base_url } : {}),
+    ...(row.normalized_base_url ?? row.base_url ? { baseUrl: row.normalized_base_url ?? row.base_url } : {}),
     defaultModel: row.default_model,
     name: row.name
   };
@@ -194,15 +212,16 @@ function providerFromRow(row: ProviderRow): Provider {
 
 async function providerRowForUser(userId: string, id: string): Promise<ProviderRow | undefined> {
   return get<ProviderRow>(
-    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
-            validation_status, validation_error_code, validated_at
+    `SELECT id, user_id, name, type, base_url, raw_base_url, normalized_base_url, protocol, api_key_enc, default_model,
+            discovered_models, capabilities, validation_status, validation_error_code, last_check_message, validated_at,
+            last_latency_ms, failure_count, next_retry_at, is_active, is_ready
      FROM providers WHERE id = ? AND user_id = ? AND is_active = 1`,
     [id, userId]
   );
 }
 
 function assertProviderVerified(row: ProviderRow): void {
-  if (row.validation_status !== 'verified') {
+  if (row.validation_status !== 'ready' || !(row.is_ready === true || row.is_ready === 1)) {
     throw new AppError('provider_not_verified', 409, 'Test and verify the provider before using it in chat.', {
       providerId: row.id,
       validationStatus: row.validation_status,
@@ -219,9 +238,10 @@ async function providerForUser(userId: string, id?: string): Promise<Provider> {
     return providerFromRow(exact);
   }
   const rows = await query<ProviderRow>(
-    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
-            validation_status, validation_error_code, validated_at
-     FROM providers WHERE user_id = ? AND is_active = 1 AND validation_status = 'verified' ORDER BY created_at DESC`,
+    `SELECT id, user_id, name, type, base_url, raw_base_url, normalized_base_url, protocol, api_key_enc, default_model,
+            discovered_models, capabilities, validation_status, validation_error_code, last_check_message, validated_at,
+            last_latency_ms, failure_count, next_retry_at, is_active, is_ready
+     FROM providers WHERE user_id = ? AND is_active = 1 AND validation_status = 'ready' AND is_ready = 1 ORDER BY created_at DESC`,
     [userId]
   );
   if (rows.length === 0) throw new AppError('provider_not_verified', 409, 'Configure and verify an AI provider before sending messages.', { reason: 'none_verified' });
@@ -232,9 +252,10 @@ async function providerForUser(userId: string, id?: string): Promise<Provider> {
 async function resolveProviderForChat(userId: string, chat: ChatRow): Promise<Provider> {
   if (chat.provider_id) return providerForUser(userId, chat.provider_id);
   const rows = await query<ProviderRow>(
-    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
-            validation_status, validation_error_code, validated_at
-     FROM providers WHERE user_id = ? AND is_active = 1 AND validation_status = 'verified' ORDER BY created_at DESC`,
+    `SELECT id, user_id, name, type, base_url, raw_base_url, normalized_base_url, protocol, api_key_enc, default_model,
+            discovered_models, capabilities, validation_status, validation_error_code, last_check_message, validated_at,
+            last_latency_ms, failure_count, next_retry_at, is_active, is_ready
+     FROM providers WHERE user_id = ? AND is_active = 1 AND validation_status = 'ready' AND is_ready = 1 ORDER BY created_at DESC`,
     [userId]
   );
   if (rows.length === 0) throw new AppError('provider_not_verified', 409, 'Configure and verify an AI provider before sending messages.', { reason: 'none_verified' });
@@ -278,55 +299,31 @@ export function parseLegacyToolCall(text: string): { name: string; args: Record<
   }
 }
 
-function providerInput(input: z.infer<typeof providerTestSchema>, name = 'Connection test'): Provider {
-  const apiKey = input.apiKey ?? '';
-  const baseUrl = resolveProviderBaseUrl(input.type, typeof input.baseUrl === 'string' ? input.baseUrl : undefined);
-  assertProviderCredentials(input.type, apiKey, baseUrl);
+function providerRuntime(input: { type: string; apiKey?: string; baseUrl?: string | null; model?: string; name?: string }): ProviderRuntimeInput {
   return {
     type: input.type,
-    apiKey,
-    ...(baseUrl ? { baseUrl } : {}),
-    defaultModel: input.model,
-    name
+    apiKey: input.apiKey ?? '',
+    ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+    defaultModel: input.model ?? '',
+    name: input.name ?? 'Provider'
   };
 }
 
-async function validateProvider(input: z.infer<typeof providerTestSchema>): Promise<{ message: string; model: string; diagnostic: ReturnType<typeof successfulProviderDiagnostic> }> {
-  const provider = providerInput(input);
-  const result = await testProviderConnection(provider, input.model ?? '');
-  let modelsSupported = false;
-  let modelsFailed = false;
-  let modelCount = 0;
+function diagnosticProviderStatus(status: string): ProviderStatus {
+  if (status === 'ready') return 'ready';
+  if (status === 'invalid_api_key' || status === 'forbidden') return 'invalid_credentials';
+  if (['provider_unavailable', 'model_unavailable', 'rate_limited', 'timeout', 'network_error', 'dns_error', 'tls_error'].includes(status)) return 'temporarily_unavailable';
+  return 'configuration_error';
+}
+
+function parseJsonObject(value: string | null): Record<string, unknown> {
+  if (!value) return {};
   try {
-    const discovery = await listProviderModels(provider);
-    modelsSupported = discovery.supported;
-    modelCount = discovery.models.length;
+    const parsed = JSON.parse(value) as unknown;
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
   } catch {
-    modelsFailed = true;
+    return {};
   }
-  return {
-    ...result,
-    diagnostic: successfulProviderDiagnostic({
-      providerType: input.type,
-      selectedModel: result.model,
-      modelsSupported,
-      modelsFailed,
-      modelCount
-    })
-  };
-}
-
-function modelDiscoveryProvider(input: { type: string; apiKey: string | undefined; baseUrl: unknown }): Provider {
-  const apiKey = input.apiKey ?? '';
-  const baseUrl = resolveProviderBaseUrl(input.type, typeof input.baseUrl === 'string' ? input.baseUrl : undefined);
-  assertProviderCredentials(input.type, apiKey, baseUrl);
-  return {
-    type: input.type,
-    apiKey,
-    ...(baseUrl ? { baseUrl } : {}),
-    defaultModel: 'model-discovery',
-    name: 'Model discovery'
-  };
 }
 
 function normalizeDiscoveredChats(value: unknown): Array<Record<string, unknown>> {
@@ -530,7 +527,7 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
     try {
       const providers = await query<{ validation_status: string }>('SELECT validation_status FROM providers WHERE user_id = ? AND is_active = 1', [req.user!.id]);
       const integrations = await query<{ type: string; validation_status: string }>('SELECT type, validation_status FROM integrations WHERE user_id = ? AND is_active = 1', [req.user!.id]);
-      const verifiedProviderCount = providers.filter((provider) => provider.validation_status === 'verified').length;
+      const verifiedProviderCount = providers.filter((provider) => provider.validation_status === 'ready').length;
       const verifiedIntegrations = integrations.filter((integration) => integration.validation_status === 'verified');
       const verifiedTypes = new Set(verifiedIntegrations.map((integration) => integration.type));
       const externalSandboxConfigured = verifiedTypes.has('sandbox');
@@ -572,15 +569,62 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
     res.json({ providers: providerCatalog });
   });
 
+  app.post('/api/providers/normalize-url', auth, (req: AuthRequest, res: Response, next: NextFunction): void => {
+    try {
+      const input = parseInput(providerNormalizeSchema, req.body);
+      const normalized = normalizedRuntimeConfig(providerRuntime({
+        type: input.type,
+        apiKey: providerCatalog.find((entry) => entry.id === input.type)?.apiKeyRequired === false ? '' : 'validation-placeholder',
+        baseUrl: input.baseUrl,
+        model: input.model ?? 'validation-model'
+      }));
+      res.json({
+        success: true,
+        providerType: normalized.providerType,
+        rawBaseUrl: normalized.rawBaseUrl,
+        normalizedBaseUrl: normalized.normalizedBaseUrl,
+        resolvedModelsUrls: normalized.resolvedModelsUrls,
+        resolvedChatUrl: normalized.resolvedChatUrl,
+        resolvedResponsesUrl: normalized.resolvedResponsesUrl
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/providers', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const rows = await query(
-        `SELECT id, name, type, base_url, default_model, validation_status,
-                validation_error_code, validated_at, is_active, created_at, updated_at
+      const rows = await query<ProviderRow>(
+        `SELECT id, user_id, name, type, base_url, raw_base_url, normalized_base_url, protocol,
+                api_key_enc, default_model, discovered_models, capabilities, validation_status,
+                validation_error_code, last_check_message, validated_at, last_latency_ms,
+                failure_count, next_retry_at, is_active, is_ready, created_at, updated_at
          FROM providers WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC`,
         [req.user!.id]
       );
-      res.json({ providers: rows });
+      res.json({ providers: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        protocol: row.protocol,
+        base_url: row.normalized_base_url ?? row.base_url,
+        raw_base_url: row.raw_base_url,
+        normalized_base_url: row.normalized_base_url ?? row.base_url,
+        default_model: row.default_model,
+        selected_model: row.default_model,
+        discovered_models: Object.values(parseJsonObject(row.discovered_models)),
+        capabilities: parseJsonObject(row.capabilities),
+        validation_status: row.validation_status,
+        status: row.validation_status,
+        validation_error_code: row.validation_error_code,
+        last_check_message: row.last_check_message,
+        validated_at: row.validated_at,
+        last_latency_ms: row.last_latency_ms,
+        failure_count: row.failure_count,
+        next_retry_at: row.next_retry_at,
+        is_ready: row.is_ready === true || row.is_ready === 1,
+        is_enabled: row.is_active === true || row.is_active === 1
+      })) });
     } catch (error) {
       next(error);
     }
@@ -589,27 +633,54 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
   app.post('/api/providers', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const input = parseInput(providerSchema, req.body);
-      const apiKey = input.apiKey ?? '';
-      const resolvedBaseUrl = resolveProviderBaseUrl(input.type, typeof input.baseUrl === 'string' ? input.baseUrl : undefined);
-      assertProviderCredentials(input.type, apiKey, resolvedBaseUrl);
-      const finalBaseUrl = resolvedBaseUrl ?? null;
+      const runtime = providerRuntime({
+        type: input.type,
+        apiKey: input.apiKey ?? '',
+        baseUrl: input.baseUrl,
+        model: input.defaultModel,
+        name: input.name
+      });
+      const normalized = normalizedRuntimeConfig(runtime);
       const id = cryptoId();
       await run(
         `INSERT INTO providers
-          (id, user_id, name, type, base_url, api_key_enc, default_model, validation_status, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-        [id, req.user!.id, input.name, input.type, finalBaseUrl, encrypt(apiKey), input.defaultModel, 'untested']
+          (id, user_id, name, type, base_url, raw_base_url, normalized_base_url, protocol,
+           api_key_enc, encryption_version, default_model, capabilities, validation_status,
+           validation_error_code, validated_at, is_active, is_ready, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, 1, 0, CURRENT_TIMESTAMP)`,
+        [
+          id,
+          req.user!.id,
+          input.name,
+          input.type,
+          normalized.normalizedBaseUrl,
+          normalized.rawBaseUrl,
+          normalized.normalizedBaseUrl,
+          normalized.definition.protocol,
+          encrypt(runtime.apiKey),
+          1,
+          input.defaultModel,
+          JSON.stringify(normalized.definition.capabilities),
+          'draft'
+        ]
       );
       res.status(201).json({
         provider: {
           id,
           name: input.name,
           type: input.type,
-          base_url: finalBaseUrl,
+          protocol: normalized.definition.protocol,
+          raw_base_url: normalized.rawBaseUrl,
+          normalized_base_url: normalized.normalizedBaseUrl,
+          base_url: normalized.normalizedBaseUrl,
           default_model: input.defaultModel,
-          validation_status: 'untested',
+          selected_model: input.defaultModel,
+          validation_status: 'draft',
+          status: 'draft',
           validation_error_code: null,
-          validated_at: null
+          validated_at: null,
+          is_ready: false,
+          is_enabled: true
         }
       });
     } catch (error) {
@@ -624,25 +695,44 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       const existing = await providerRowForUser(req.user!.id, id);
       if (!existing) throw new AppError('provider_not_found', 404);
       const type = input.type ?? existing.type;
-      const baseUrlWasProvided = Object.prototype.hasOwnProperty.call(req.body ?? {}, 'baseUrl');
-      const typeChanged = type !== existing.type;
-      const baseUrl = baseUrlWasProvided
-        ? resolveProviderBaseUrl(type, typeof input.baseUrl === 'string' ? input.baseUrl : undefined) ?? null
-        : typeChanged
-          ? resolveProviderBaseUrl(type, undefined) ?? null
-          : existing.base_url;
-      const effectiveApiKey = input.apiKey ?? decrypt(existing.api_key_enc);
-      assertProviderCredentials(type, effectiveApiKey, baseUrl ?? undefined);
-      const apiKeyEnc = input.apiKey !== undefined ? encrypt(input.apiKey) : existing.api_key_enc;
+      const apiKey = input.apiKey ?? decrypt(existing.api_key_enc);
+      const baseUrl = Object.prototype.hasOwnProperty.call(req.body ?? {}, 'baseUrl')
+        ? input.baseUrl
+        : existing.raw_base_url ?? existing.normalized_base_url ?? existing.base_url;
+      const model = input.defaultModel ?? existing.default_model;
+      const name = input.name ?? existing.name;
+      const runtime = providerRuntime({ type, apiKey, baseUrl, model, name });
+      const normalized = normalizedRuntimeConfig(runtime);
       await run(
         `UPDATE providers
-         SET name = ?, type = ?, base_url = ?, api_key_enc = ?, default_model = ?,
-             validation_status = 'untested', validation_error_code = NULL,
-             validated_at = NULL, updated_at = CURRENT_TIMESTAMP
+         SET name = ?, type = ?, base_url = ?, raw_base_url = ?, normalized_base_url = ?, protocol = ?,
+             api_key_enc = ?, default_model = ?, capabilities = ?, validation_status = 'draft',
+             validation_error_code = NULL, last_check_message = NULL, validated_at = NULL,
+             last_latency_ms = NULL, next_retry_at = NULL, is_ready = 0, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND user_id = ? AND is_active = 1`,
-        [input.name ?? existing.name, type, baseUrl, apiKeyEnc, input.defaultModel ?? existing.default_model, id, req.user!.id]
+        [
+          name,
+          type,
+          normalized.normalizedBaseUrl,
+          normalized.rawBaseUrl,
+          normalized.normalizedBaseUrl,
+          normalized.definition.protocol,
+          input.apiKey !== undefined ? encrypt(input.apiKey) : existing.api_key_enc,
+          model,
+          JSON.stringify(normalized.definition.capabilities),
+          id,
+          req.user!.id
+        ]
       );
-      res.json({ ok: true, id, validation_status: 'untested' });
+      res.json({
+        success: true,
+        id,
+        status: 'draft',
+        validation_status: 'draft',
+        rawBaseUrl: normalized.rawBaseUrl,
+        normalizedBaseUrl: normalized.normalizedBaseUrl,
+        isReady: false
+      });
     } catch (error) {
       next(error);
     }
@@ -655,7 +745,7 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       if (!existing) throw new AppError('provider_not_found', 404);
       await transaction([
         {
-          sql: `UPDATE providers SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+          sql: `UPDATE providers SET is_active = 0, is_ready = 0, validation_status = 'disabled', updated_at = CURRENT_TIMESTAMP
                 WHERE id = ? AND user_id = ?`,
           params: [id, req.user!.id]
         },
@@ -665,41 +755,45 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
           params: [id, req.user!.id]
         }
       ]);
-      res.json({ ok: true });
+      res.json({ success: true });
     } catch (error) {
       next(error);
     }
   });
 
-  app.post('/api/providers/test', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
-    let providerType = 'provider';
-    try {
-      const input = parseInput(providerTestSchema, req.body);
-      providerType = input.type;
-      const result = await validateProvider({
-        type: input.type,
-        apiKey: input.apiKey ?? '',
-        model: input.model ?? '',
-        ...(typeof input.baseUrl === 'string' ? { baseUrl: input.baseUrl } : {})
-      });
-      res.json({
-        ok: true,
-        provider: input.type,
-        model: result.model,
-        responsePreview: result.message,
-        diagnostic: result.diagnostic,
-        stages: { url: 'passed', network: 'passed', authentication: 'passed', model: 'passed', completion: 'passed' }
-      });
-    } catch (error) {
-      next(providerErrorWithDiagnostic(providerType, error));
-    }
-  });
-
-  app.post('/api/providers/models', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  const discoverDraftModels = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const input = parseInput(providerModelsSchema, req.body);
-      const result = await listProviderModels(modelDiscoveryProvider({ type: input.type, apiKey: input.apiKey, baseUrl: input.baseUrl }));
-      res.json(result);
+      const runtime = providerRuntime({
+        type: input.type,
+        apiKey: input.apiKey,
+        baseUrl: input.baseUrl,
+        model: 'model-discovery'
+      });
+      const result = await discoverModels(runtime);
+      res.status(result.success || result.status === 'model_discovery_unsupported' ? 200 : 502).json({ success: result.success, ...result });
+    } catch (error) {
+      next(error);
+    }
+  };
+  app.post('/api/providers/discover-models', auth, discoverDraftModels);
+  app.post('/api/providers/models', auth, discoverDraftModels);
+
+  app.post('/api/providers/test', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const input = parseInput(providerTestSchema, req.body);
+      const diagnostic = await testProvider({
+        provider: providerRuntime({
+          type: input.type,
+          apiKey: input.apiKey ?? '',
+          baseUrl: input.baseUrl,
+          model: input.model ?? '',
+          name: 'Connection test'
+        }),
+        model: input.model ?? '',
+        requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : undefined
+      });
+      res.json({ success: diagnostic.success, diagnostic });
     } catch (error) {
       next(error);
     }
@@ -710,45 +804,84 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       const id = routeId(req);
       const row = await providerRowForUser(req.user!.id, id);
       if (!row) throw new AppError('provider_not_found', 404);
-      const result = await listProviderModels(providerFromRow(row));
-      res.json(result);
+      const result = await discoverModels(providerFromRow(row));
+      if (result.success) {
+        await run(
+          `UPDATE providers SET discovered_models = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
+          [JSON.stringify(result.models), id, req.user!.id]
+        );
+      }
+      res.json({ success: result.success, ...result });
     } catch (error) {
       next(error);
     }
   });
 
-  app.post('/api/providers/:id/test', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  const retestSavedProvider = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     const id = (() => {
       try { return routeId(req); } catch (error) { next(error); return undefined; }
     })();
     if (!id) return;
-    let providerType = 'provider';
     try {
       const row = await providerRowForUser(req.user!.id, id);
       if (!row) throw new AppError('provider_not_found', 404);
-      providerType = row.type;
-      const result = await validateProvider({
-        type: row.type,
-        apiKey: decrypt(row.api_key_enc),
-        model: row.default_model,
-        ...(row.base_url ? { baseUrl: row.base_url } : {})
-      });
       await run(
-        `UPDATE providers SET validation_status = 'verified', validation_error_code = NULL,
-         validated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
+        `UPDATE providers SET validation_status = 'testing', is_ready = 0, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND user_id = ?`,
         [id, req.user!.id]
       );
-      res.json({ ok: true, id, model: result.model, responsePreview: result.message, diagnostic: result.diagnostic, validation_status: 'verified' });
-    } catch (error) {
-      const code = errorCode(error);
+      const diagnostic = await testProvider({
+        provider: providerFromRow(row),
+        model: row.default_model,
+        requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : undefined
+      });
+      const status = diagnosticProviderStatus(diagnostic.status);
+      const ready = diagnostic.success && status === 'ready';
+      const discoveryModels = diagnostic.discovery?.models ?? [];
       await run(
-        `UPDATE providers SET validation_status = 'failed', validation_error_code = ?,
-         validated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
-        [code, id, req.user!.id]
+        `UPDATE providers
+         SET validation_status = ?, validation_error_code = ?, last_check_message = ?, validated_at = CURRENT_TIMESTAMP,
+             last_latency_ms = ?, failure_count = CASE WHEN ? THEN 0 ELSE failure_count + 1 END,
+             next_retry_at = ?, is_ready = ?, discovered_models = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ? AND user_id = ?`,
+        [
+          status,
+          diagnostic.success ? null : diagnostic.status,
+          diagnostic.success ? diagnostic.userMessageEn : diagnostic.message,
+          diagnostic.latencyMs ?? null,
+          ready ? 1 : 0,
+          diagnostic.retryable ? new Date(Date.now() + 60_000).toISOString() : null,
+          ready ? 1 : 0,
+          JSON.stringify(discoveryModels),
+          id,
+          req.user!.id
+        ]
+      );
+      res.json({
+        success: diagnostic.success,
+        id,
+        status,
+        validation_status: status,
+        is_ready: ready,
+        diagnostic
+      });
+    } catch (error) {
+      const diagnostic = diagnoseProviderError(error, {
+        context: 'inference',
+        requestId: typeof res.locals.requestId === 'string' ? res.locals.requestId : undefined
+      });
+      const status = diagnosticProviderStatus(diagnostic.status);
+      await run(
+        `UPDATE providers SET validation_status = ?, validation_error_code = ?, last_check_message = ?,
+         validated_at = CURRENT_TIMESTAMP, failure_count = failure_count + 1, is_ready = 0,
+         updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
+        [status, diagnostic.status, diagnostic.message, id, req.user!.id]
       ).catch(() => undefined);
-      next(providerErrorWithDiagnostic(providerType, error));
+      res.json({ success: false, id, status, validation_status: status, is_ready: false, diagnostic });
     }
-  });
+  };
+  app.post('/api/providers/:id/retest', auth, retestSavedProvider);
+  app.post('/api/providers/:id/test', auth, retestSavedProvider);
 
   app.get('/api/integrations', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {

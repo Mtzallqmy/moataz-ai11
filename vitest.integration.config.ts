@@ -19,7 +19,8 @@ export default defineConfig({
       DEFAULT_ADMIN_EMAIL: 'admin@example.com',
       DEFAULT_ADMIN_PASSWORD: 'IntegrationPassword123!',
       APP_URL: 'http://localhost:8080',
-      ALLOW_SHELL: 'false'
+      ALLOW_SHELL: 'false',
+      PROVIDER_REQUEST_TIMEOUT_MS: '250'
     }
   }
 });
