@@ -49,6 +49,7 @@ function requestHeaders(config: NormalizedProviderConfig): Record<string, string
   };
   if (config.definition.authentication === 'bearer' && config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
   if (config.definition.authentication === 'x-api-key' && config.apiKey) headers['x-api-key'] = config.apiKey;
+  if (config.definition.authentication === 'google-api-key' && config.apiKey) headers['x-goog-api-key'] = config.apiKey;
   if (config.definition.id === 'openrouter') {
     headers['HTTP-Referer'] = process.env.APP_URL || 'https://moataz.ai';
     headers['X-Title'] = 'Moataz AI';
