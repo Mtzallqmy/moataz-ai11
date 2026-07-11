@@ -36,6 +36,7 @@
 ./docs/terminal-protocol.md
 ./drizzle.config.ts
 ./drizzle/0000_phase12_postgres.sql
+./drizzle/meta/_journal.json
 ./eslint.config.js
 ./package-lock.json
 ./package.json
