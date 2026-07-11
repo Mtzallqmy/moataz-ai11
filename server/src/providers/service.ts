@@ -30,13 +30,14 @@ export function normalizeProviderConfig(input: ProviderRuntimeConfig): ProviderR
 
 export async function discoverModels(
   input: ProviderRuntimeConfig,
-  options: { signal?: AbortSignal; force?: boolean } = {}
+  options: { signal?: AbortSignal | undefined; force?: boolean | undefined } = {}
 ): Promise<ModelDiscoveryResult> {
   try {
     return await discoverProviderModels(normalizeProviderConfig(input), options);
   } catch (error) {
+    const endpoint = input.normalizedBaseUrl ?? input.rawBaseUrl;
     const diagnostic = diagnoseProviderError(error, {
-      endpoint: input.normalizedBaseUrl ?? input.rawBaseUrl,
+      ...(endpoint ? { endpoint } : {}),
       providerReachableHint: null,
       keyValidHint: null
     });
@@ -52,16 +53,16 @@ function testedEndpoint(input: ProviderRuntimeConfig): string | undefined {
 
 export async function testProviderConnection(input: {
   config: ProviderRuntimeConfig;
-  requestId?: string;
-  signal?: AbortSignal;
+  requestId?: string | undefined;
+  signal?: AbortSignal | undefined;
 }): Promise<{
   diagnostic: ProviderDiagnosticResult;
   discovery: ModelDiscoveryResult;
   responsePreview: string;
   model: string;
 }> {
-  const config = normalizeProviderConfig(input.config);
-  if (!concreteModel(config.model)) {
+  const runtime = normalizeProviderConfig(input.config);
+  if (!concreteModel(runtime.model)) {
     throw providerDiagnosticError({
       success: false,
       status: 'invalid_request',
@@ -73,18 +74,20 @@ export async function testProviderConnection(input: {
       userMessageAr: 'اختر Model ID محددًا قبل فحص التنفيذ. اكتشاف النماذج لا يختار نموذجًا تلقائيًا نيابة عنك.',
       userMessageEn: 'Choose a concrete model ID before the inference probe. Model discovery does not select a model automatically.',
       ...(input.requestId ? { requestId: input.requestId } : {}),
-      testedModel: config.model
+      testedModel: runtime.model
     });
   }
 
   let discovery: ModelDiscoveryResult;
   try {
-    discovery = await discoverProviderModels(config, { signal: input.signal });
+    discovery = await discoverProviderModels(runtime, {
+      ...(input.signal ? { signal: input.signal } : {})
+    });
   } catch (error) {
     const discoveryDiagnostic = diagnoseProviderError(error, {
-      requestId: input.requestId,
-      endpoint: config.normalizedBaseUrl,
-      model: config.model
+      ...(input.requestId ? { requestId: input.requestId } : {}),
+      ...(runtime.normalizedBaseUrl ? { endpoint: runtime.normalizedBaseUrl } : {}),
+      model: runtime.model
     });
     if (discoveryDiagnostic.status === 'invalid_api_key' || discoveryDiagnostic.status === 'forbidden') {
       throw providerDiagnosticError(discoveryDiagnostic);
@@ -99,18 +102,18 @@ export async function testProviderConnection(input: {
     };
   }
 
-  const adapter = adapterForProtocol(getProviderDefinition(config.providerType).protocol);
+  const adapter = adapterForProtocol(getProviderDefinition(runtime.providerType).protocol);
   const started = performance.now();
   try {
     const result = await adapter.createChatCompletion({
-      config,
+      config: runtime,
       messages: [
         { role: 'system', content: 'Reply with exactly: OK' },
         { role: 'user', content: 'Reply with exactly: OK' }
       ],
       maxOutputTokens: 5,
       temperature: 0,
-      signal: input.signal
+      ...(input.signal ? { signal: input.signal } : {})
     });
     const response = result.text.trim();
     if (!/^OK[.!]?$/i.test(response)) {
@@ -120,25 +123,27 @@ export async function testProviderConnection(input: {
       });
     }
     const latencyMs = Math.max(0, Math.round(performance.now() - started));
+    const endpoint = testedEndpoint(runtime);
     const diagnostic = readyProviderDiagnostic({
-      endpoint: testedEndpoint(config),
-      model: result.model || config.model,
+      ...(endpoint ? { endpoint } : {}),
+      model: result.model || runtime.model,
       latencyMs,
-      requestId: input.requestId,
-      upstreamRequestId: result.upstreamRequestId,
+      ...(input.requestId ? { requestId: input.requestId } : {}),
+      ...(result.upstreamRequestId ? { upstreamRequestId: result.upstreamRequestId } : {}),
       discovery
     });
     return {
       diagnostic,
       discovery,
       responsePreview: response.slice(0, 120),
-      model: result.model || config.model
+      model: result.model || runtime.model
     };
   } catch (error) {
+    const endpoint = testedEndpoint(runtime);
     const diagnostic = diagnoseProviderError(error, {
-      requestId: input.requestId,
-      endpoint: testedEndpoint(config),
-      model: config.model,
+      ...(input.requestId ? { requestId: input.requestId } : {}),
+      ...(endpoint ? { endpoint } : {}),
+      model: runtime.model,
       discovery,
       keyValidHint: discovery.status === 'supported' ? true : null,
       providerReachableHint: discovery.status === 'supported' ? true : null,
@@ -149,11 +154,11 @@ export async function testProviderConnection(input: {
 }
 
 export async function createProviderChatCompletion(input: ProviderChatInput): Promise<AgentStep> {
-  const config = normalizeProviderConfig(input.config);
-  if (!concreteModel(config.model)) throw new AppError('provider_model_required', 422, 'A concrete model ID is required.');
-  const adapter = adapterForProtocol(getProviderDefinition(config.providerType).protocol);
+  const runtime = normalizeProviderConfig(input.config);
+  if (!concreteModel(runtime.model)) throw new AppError('provider_model_required', 422, 'A concrete model ID is required.');
+  const adapter = adapterForProtocol(getProviderDefinition(runtime.providerType).protocol);
   try {
-    const result = await adapter.createChatCompletion({ ...input, config });
+    const result = await adapter.createChatCompletion({ ...input, config: runtime });
     return {
       text: result.text,
       toolCalls: result.toolCalls,
@@ -162,25 +167,27 @@ export async function createProviderChatCompletion(input: ProviderChatInput): Pr
       ...(result.upstreamRequestId ? { upstreamRequestId: result.upstreamRequestId } : {})
     };
   } catch (error) {
+    const endpoint = testedEndpoint(runtime);
     const diagnostic = diagnoseProviderError(error, {
-      endpoint: testedEndpoint(config),
-      model: config.model
+      ...(endpoint ? { endpoint } : {}),
+      model: runtime.model
     });
     throw providerDiagnosticError(diagnostic);
   }
 }
 
 export async function* streamProviderChatCompletion(input: ProviderChatInput): AsyncIterable<ProviderStreamEvent> {
-  const config = normalizeProviderConfig(input.config);
-  if (!concreteModel(config.model)) throw new AppError('provider_model_required', 422, 'A concrete model ID is required.');
-  const adapter = adapterForProtocol(getProviderDefinition(config.providerType).protocol);
+  const runtime = normalizeProviderConfig(input.config);
+  if (!concreteModel(runtime.model)) throw new AppError('provider_model_required', 422, 'A concrete model ID is required.');
+  const adapter = adapterForProtocol(getProviderDefinition(runtime.providerType).protocol);
   if (!adapter.streamChatCompletion) throw new AppError('provider_streaming_unsupported', 422, 'This provider adapter does not support streaming.');
   try {
-    yield* adapter.streamChatCompletion({ ...input, config });
+    yield* adapter.streamChatCompletion({ ...input, config: runtime });
   } catch (error) {
+    const endpoint = testedEndpoint(runtime);
     throw providerDiagnosticError(diagnoseProviderError(error, {
-      endpoint: testedEndpoint(config),
-      model: config.model
+      ...(endpoint ? { endpoint } : {}),
+      model: runtime.model
     }));
   }
 }
