@@ -222,19 +222,13 @@ server/src/routes.ts:1295:      await run('UPDATE agent_runs SET status = ?, err
 
 # Provider and LLM files
 server/src/attachments.test.ts:29:    expect(summarizeAttachment(row('main.ts', 'application/octet-stream')).kind).toBe('text');
-server/src/llm.ts:7:import { assertProviderCredentials, providerAdapter, providerDefinition } from './providers.js';
-server/src/llm.ts:8:import { upstreamAppError } from './upstream-errors.js';
-server/src/llm.ts:63:  const mapped = upstreamAppError('provider', provider.type, error);
-server/src/llm.ts:276:export async function completeAgentStep(
-server/src/llm.ts:339:  const step = await completeAgentStep(provider, messages, model, [], externalSignal);
-server/src/llm.ts:361:export async function listProviderModels(provider: Provider): Promise<{ supported: boolean; models: string[] }> {
-server/src/llm.ts:363:    return { supported: false, models: [...providerDefinition(provider.type).modelExamples] };
-server/src/llm.ts:373:    const upstreamStatus = typeof details.upstreamStatus === 'number' ? details.upstreamStatus : undefined;
-server/src/llm.ts:374:    if (upstreamStatus === 404 || upstreamStatus === 405 || mapped.code === 'provider_model_not_found') {
-server/src/llm.ts:375:      return { supported: false, models: [...providerDefinition(provider.type).modelExamples] };
-server/src/llm.ts:416:export async function diagnoseProviderConnection(provider: Provider, preferredModel?: string): Promise<ProviderProbeResult> {
-server/src/llm.ts:417:  const discovery = await listProviderModels(provider);
-server/src/llm.ts:419:  const examples = [...providerDefinition(provider.type).modelExamples].filter((model) => isConcreteModel(model));
+server/src/llm.ts:12:  streamProviderChatCompletion,
+server/src/llm.ts:77:export async function completeAgentStep(
+server/src/llm.ts:102:  const step = await completeAgentStep(provider, messages, model, [], signal);
+server/src/llm.ts:106:export async function* streamComplete(
+server/src/llm.ts:114:    yield* streamProviderChatCompletion({
+server/src/llm.ts:125:export async function listProviderModels(provider: Provider): Promise<{ supported: boolean; models: string[] }> {
+server/src/llm.ts:137:export async function diagnoseProviderConnection(provider: Provider, preferredModel?: string): Promise<ProviderProbeResult> {
 server/src/providers/types.ts:9:  streaming: CapabilityValue;
 server/src/providers/types.ts:58:  streaming?: CapabilityValue;
 server/src/providers/types.ts:116:  upstreamRequestId?: string;
