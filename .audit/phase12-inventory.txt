@@ -84,6 +84,7 @@
 ./server/src/redaction.test.ts
 ./server/src/redaction.ts
 ./server/src/repositories/providers.repository.ts
+./server/src/repositories/users.repository.ts
 ./server/src/routes.test.ts
 ./server/src/routes.ts
 ./server/src/telegram.test.ts
@@ -424,6 +425,7 @@ client/src/pages/TerminalPage.tsx:9:type TerminalEvent = { type: 'session_starte
 ./server/src/config.test.ts:68:      'DATABASE_URL',
 ./server/src/config.test.ts:93:    const config = loadConfig({ ...railwayBase, DATABASE_URL: 'file:./data/moataz.db' });
 ./server/src/repositories/providers.repository.ts:1:import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+./server/src/repositories/users.repository.ts:1:import { eq, sql } from 'drizzle-orm';
 ./server/src/db.ts:4:import Database from 'better-sqlite3';
 ./server/src/db.ts:30:  pgPool = new Pool({
 ./server/src/db.ts:106:    await run(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
