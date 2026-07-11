@@ -5,8 +5,10 @@ import bcrypt from 'bcryptjs';
 import { parse as parseCookie, serialize as serializeCookie } from 'cookie';
 import { z } from 'zod';
 import { config } from './config.js';
-import { cryptoId, get, query, run, sha256, transaction, type DbRow } from './db.js';
+import { cryptoId, sha256 } from './database/ids.js';
 import { AppError } from './errors.js';
+import { sessionsRepository, type RefreshUserRecord } from './repositories/sessions.repository.js';
+import { usersRepository, type UserRecord } from './repositories/users.repository.js';
 import { parseInput, uuidSchema } from './validation.js';
 
 export type AuthUser = {
@@ -21,24 +23,6 @@ export interface AuthRequest extends Request {
   user?: AuthUser;
   accessToken?: string;
 }
-
-type UserRow = {
-  id: string;
-  email: string;
-  password_hash: string;
-  name: string;
-  role: string;
-  is_active: number | boolean;
-};
-
-type SessionRow = DbRow & {
-  id: string;
-  token_hash: string;
-  expires_at: string;
-  created_at: string;
-  user_agent: string | null;
-  ip_hash: string | null;
-};
 
 type AccessTokenPayload = JwtPayload & {
   sub: string;
@@ -68,13 +52,13 @@ function normalizeRole(role: string): 'admin' | 'user' {
   return role === 'admin' ? 'admin' : 'user';
 }
 
-function toAuthUser(row: Pick<UserRow, 'id' | 'email' | 'name' | 'role' | 'is_active'>): AuthUser {
+function toAuthUser(row: Pick<UserRecord | RefreshUserRecord, 'id' | 'email' | 'name' | 'role' | 'is_active'>): AuthUser {
   return {
     id: row.id,
     email: row.email,
     name: row.name,
     role: normalizeRole(row.role),
-    isActive: row.is_active === true || row.is_active === 1
+    isActive: row.is_active
   };
 }
 
@@ -115,8 +99,8 @@ export async function auth(req: AuthRequest, res: Response, next: NextFunction):
   }
   try {
     const payload = verifyAccessToken(token);
-    const row = await get<UserRow>('SELECT id, email, password_hash, name, role, is_active FROM users WHERE id = ?', [payload.sub]);
-    if (!row || !(row.is_active === true || row.is_active === 1)) {
+    const row = await usersRepository.findById(payload.sub);
+    if (!row?.is_active) {
       res.status(401).json({ error: 'unauthorized' });
       return;
     }
@@ -177,10 +161,14 @@ function requestFingerprint(req: Request): { userAgent: string | null; ipHash: s
 async function persistRefreshToken(userId: string, req: Request): Promise<string> {
   const token = createRefreshToken();
   const fingerprint = requestFingerprint(req);
-  await run(
-    'INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, user_agent, ip_hash) VALUES (?, ?, ?, ?, ?, ?)',
-    [token.id, userId, token.hash, token.expiresAt, fingerprint.userAgent, fingerprint.ipHash]
-  );
+  await sessionsRepository.create({
+    id: token.id,
+    userId,
+    tokenHash: token.hash,
+    expiresAt: token.expiresAt,
+    userAgent: fingerprint.userAgent,
+    ipHash: fingerprint.ipHash
+  });
   return token.raw;
 }
 
@@ -196,20 +184,25 @@ async function issueSession(user: AuthUser, req: Request, res: Response): Promis
   });
 }
 
+function databaseCode(error: unknown): string | undefined {
+  return error !== null && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : undefined;
+}
+
 export function authRoutes(app: Express): void {
   const handleLogin = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const input = parseInput(loginSchema, req.body);
       const email = normalizeEmail(input.email);
-      const row = await get<UserRow>('SELECT id, email, password_hash, name, role, is_active FROM users WHERE email = ?', [email]);
+      const row = await usersRepository.findByEmail(email);
       const passwordMatches = row ? await bcrypt.compare(input.password, row.password_hash) : false;
-      const active = row && (row.is_active === true || row.is_active === 1);
-      if (!row || !passwordMatches || !active) {
+      if (!row || !passwordMatches || !row.is_active) {
         res.status(401).json({ error: 'bad_credentials' });
         return;
       }
       const user = toAuthUser(row);
-      await run('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
+      await usersRepository.markLogin(user.id);
       await issueSession(user, req, res);
     } catch (error) { next(error); }
   };
@@ -221,20 +214,19 @@ export function authRoutes(app: Express): void {
     try {
       const raw = readRefreshToken(req);
       if (!raw) throw new AppError('unauthorized', 401);
-      const hash = sha256(raw);
-      const row = await get<UserRow & { refresh_id: string }>(
-        `SELECT u.id, u.email, u.password_hash, u.name, u.role, u.is_active, r.id AS refresh_id
-         FROM refresh_tokens r JOIN users u ON u.id = r.user_id
-         WHERE r.token_hash = ? AND r.revoked_at IS NULL AND r.expires_at > CURRENT_TIMESTAMP`,
-        [hash]
-      );
-      if (!row || !(row.is_active === true || row.is_active === 1)) throw new AppError('unauthorized', 401);
+      const row = await sessionsRepository.findValidByHash(sha256(raw));
+      if (!row?.is_active) throw new AppError('unauthorized', 401);
       const nextToken = createRefreshToken();
       const fingerprint = requestFingerprint(req);
-      await transaction([
-        { sql: 'UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND revoked_at IS NULL', params: [row.refresh_id] },
-        { sql: 'INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, user_agent, ip_hash) VALUES (?, ?, ?, ?, ?, ?)', params: [nextToken.id, row.id, nextToken.hash, nextToken.expiresAt, fingerprint.userAgent, fingerprint.ipHash] }
-      ]);
+      await sessionsRepository.rotate({
+        oldId: row.refresh_id,
+        nextId: nextToken.id,
+        userId: row.id,
+        tokenHash: nextToken.hash,
+        expiresAt: nextToken.expiresAt,
+        userAgent: fingerprint.userAgent,
+        ipHash: fingerprint.ipHash
+      });
       setRefreshCookie(res, nextToken.raw);
       const user = toAuthUser(row);
       const accessToken = signAccessToken(user);
@@ -248,7 +240,7 @@ export function authRoutes(app: Express): void {
   app.post('/api/auth/logout', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const raw = readRefreshToken(req);
-      if (raw) await run('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE token_hash = ? AND revoked_at IS NULL', [sha256(raw)]);
+      if (raw) await sessionsRepository.revokeByHash(sha256(raw));
       clearRefreshCookie(res);
       res.json({ ok: true });
     } catch (error) { next(error); }
@@ -263,16 +255,12 @@ export function authRoutes(app: Express): void {
     try {
       const raw = readRefreshToken(req);
       const currentHash = raw ? sha256(raw) : '';
-      const rows = await query<SessionRow>(
-        `SELECT id, token_hash, expires_at, created_at, user_agent, ip_hash
-         FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL AND expires_at > CURRENT_TIMESTAMP
-         ORDER BY created_at DESC`,
-        [req.user!.id]
-      );
+      const rows = await sessionsRepository.listActive(req.user!.id);
       res.json({ sessions: rows.map((row) => ({
         id: row.id,
         created_at: row.created_at,
         expires_at: row.expires_at,
+        last_used_at: row.last_used_at,
         user_agent: row.user_agent,
         current: row.token_hash === currentHash
       })) });
@@ -282,12 +270,7 @@ export function authRoutes(app: Express): void {
   app.delete('/api/auth/sessions/others', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const raw = readRefreshToken(req);
-      const currentHash = raw ? sha256(raw) : '';
-      await run(
-        `UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP
-         WHERE user_id = ? AND revoked_at IS NULL AND token_hash <> ?`,
-        [req.user!.id, currentHash]
-      );
+      await sessionsRepository.revokeOthers(req.user!.id, raw ? sha256(raw) : '');
       res.json({ ok: true });
     } catch (error) { next(error); }
   });
@@ -295,13 +278,21 @@ export function authRoutes(app: Express): void {
   app.delete('/api/auth/sessions/:id', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const id = parseInput(uuidSchema, req.params.id, 'invalid_session_id');
-      const row = await get<{ token_hash: string }>('SELECT token_hash FROM refresh_tokens WHERE id = ? AND user_id = ? AND revoked_at IS NULL', [id, req.user!.id]);
+      const row = await sessionsRepository.findOwnedActive(req.user!.id, id);
       if (!row) throw new AppError('session_not_found', 404);
-      await run('UPDATE refresh_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [id, req.user!.id]);
+      await sessionsRepository.revokeOwned(req.user!.id, id);
       const raw = readRefreshToken(req);
       const current = Boolean(raw && sha256(raw) === row.token_hash);
       if (current) clearRefreshCookie(res);
       res.json({ ok: true, current });
+    } catch (error) { next(error); }
+  });
+
+  app.post('/api/auth/sessions/revoke-all', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      await sessionsRepository.revokeAll(req.user!.id);
+      clearRefreshCookie(res);
+      res.json({ ok: true });
     } catch (error) { next(error); }
   });
 
@@ -311,11 +302,17 @@ export function authRoutes(app: Express): void {
       const email = normalizeEmail(input.email);
       const id = cryptoId();
       const passwordHash = await bcrypt.hash(input.password, 12);
-      await run(
-        'INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, ?)',
-        [id, email, passwordHash, input.name ?? email, 'user', 1]
-      );
+      await usersRepository.create({
+        id,
+        email,
+        passwordHash,
+        name: input.name ?? email,
+        role: 'user',
+        isActive: true
+      });
       res.status(201).json({ id, email, name: input.name ?? email, role: 'user' });
-    } catch (error) { next(error); }
+    } catch (error) {
+      next(databaseCode(error) === '23505' ? new AppError('user_exists', 409) : error);
+    }
   });
 }
