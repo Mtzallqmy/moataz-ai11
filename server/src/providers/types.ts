@@ -50,28 +50,28 @@ export type NormalizedProviderConfig = NormalizedProviderUrls & {
 
 export type DiscoveredModel = {
   id: string;
-  name?: string;
-  ownedBy?: string;
-  contextLength?: number;
+  name?: string | undefined;
+  ownedBy?: string | undefined;
+  contextLength?: number | undefined;
   capabilities?: {
-    chat?: ProviderCapability;
-    tools?: ProviderCapability;
-    vision?: ProviderCapability;
-    streaming?: ProviderCapability;
-    embeddings?: ProviderCapability;
-  };
+    chat?: ProviderCapability | undefined;
+    tools?: ProviderCapability | undefined;
+    vision?: ProviderCapability | undefined;
+    streaming?: ProviderCapability | undefined;
+    embeddings?: ProviderCapability | undefined;
+  } | undefined;
 };
 
 export type ModelDiscoveryStatus = 'supported' | 'unsupported' | 'failed';
 export type ModelDiscoveryResult = {
   status: ModelDiscoveryStatus;
   models: DiscoveredModel[];
-  testedEndpoint?: string;
-  httpStatus?: number;
-  requestId?: string;
-  latencyMs?: number;
+  testedEndpoint?: string | undefined;
+  httpStatus?: number | undefined;
+  requestId?: string | undefined;
+  latencyMs?: number | undefined;
   fromCache: boolean;
-  message?: string;
+  message?: string | undefined;
 };
 
 export type ProviderDiagnosticStatus =
@@ -103,35 +103,35 @@ export type ProviderDiagnosticResult = {
   providerReachable: boolean | null;
   modelAvailable: boolean | null;
   retryable: boolean;
-  httpStatus?: number;
-  providerCode?: string;
+  httpStatus?: number | undefined;
+  providerCode?: string | undefined;
   message: string;
   userMessageAr: string;
   userMessageEn: string;
-  requestId?: string;
-  upstreamRequestId?: string;
-  testedEndpoint?: string;
-  testedModel?: string;
-  latencyMs?: number;
-  discovery?: ModelDiscoveryResult;
+  requestId?: string | undefined;
+  upstreamRequestId?: string | undefined;
+  testedEndpoint?: string | undefined;
+  testedModel?: string | undefined;
+  latencyMs?: number | undefined;
+  discovery?: ModelDiscoveryResult | undefined;
 };
 
 export type ProviderChatInput = {
   config: NormalizedProviderConfig;
   messages: readonly Msg[];
   model: string;
-  tools?: readonly LLMToolSpec[];
-  signal?: AbortSignal;
-  temperature?: number;
-  maxTokens?: number;
+  tools?: readonly LLMToolSpec[] | undefined;
+  signal?: AbortSignal | undefined;
+  temperature?: number | undefined;
+  maxTokens?: number | undefined;
 };
 
 export type ProviderChatResult = {
   text: string;
   toolCalls: LLMToolCall[];
   model: string;
-  requestId?: string;
-  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  requestId?: string | undefined;
+  usage?: { inputTokens?: number | undefined; outputTokens?: number | undefined; totalTokens?: number | undefined } | undefined;
 };
 
 export type ProviderStreamEvent =
@@ -143,13 +143,13 @@ export type ProviderStreamEvent =
 export interface ProviderAdapter {
   readonly definition: ProviderDefinition;
   normalizeConfig(input: {
-    apiKey?: string;
-    baseUrl?: string | null;
-    selectedModel?: string | null;
-    customHeaders?: Record<string, string>;
+    apiKey?: string | undefined;
+    baseUrl?: string | null | undefined;
+    selectedModel?: string | null | undefined;
+    customHeaders?: Record<string, string> | undefined;
   }): NormalizedProviderConfig;
-  discoverModels(config: NormalizedProviderConfig, options?: { force?: boolean; signal?: AbortSignal }): Promise<ModelDiscoveryResult>;
-  testConnection(config: NormalizedProviderConfig, selectedModel?: string): Promise<ProviderDiagnosticResult>;
+  discoverModels(config: NormalizedProviderConfig, options?: { force?: boolean | undefined; signal?: AbortSignal | undefined }): Promise<ModelDiscoveryResult>;
+  testConnection(config: NormalizedProviderConfig, selectedModel?: string | undefined): Promise<ProviderDiagnosticResult>;
   createChatCompletion(input: ProviderChatInput): Promise<ProviderChatResult>;
   streamChatCompletion?(input: ProviderChatInput): AsyncIterable<ProviderStreamEvent>;
 }
