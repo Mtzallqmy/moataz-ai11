@@ -1,0 +1,18 @@
+
+> moataz-ai@2.0.0 typecheck
+> tsc -p server/tsconfig.json --noEmit && tsc -p client/tsconfig.json --noEmit
+
+server/src/telegram.ts(311,11): error TS1002: Unterminated string literal.
+server/src/telegram.ts(312,1): error TS1005: ',' expected.
+server/src/telegram.ts(312,4): error TS1002: Unterminated string literal.
+server/src/telegram.ts(313,3): error TS1005: ',' expected.
+server/src/telegram.ts(313,44): error TS1005: ')' expected.
+server/src/telegram.ts(321,83): error TS1002: Unterminated string literal.
+server/src/telegram.ts(322,1): error TS1005: ',' expected.
+server/src/telegram.ts(322,4): error TS1002: Unterminated string literal.
+server/src/telegram.ts(323,5): error TS1005: ',' expected.
+server/src/telegram.ts(326,7): error TS1005: ')' expected.
+server/src/telegram.ts(363,13): error TS1002: Unterminated string literal.
+server/src/telegram.ts(364,1): error TS1005: ',' expected.
+server/src/telegram.ts(364,11): error TS1002: Unterminated string literal.
+server/src/telegram.ts(365,3): error TS1005: ',' expected.
