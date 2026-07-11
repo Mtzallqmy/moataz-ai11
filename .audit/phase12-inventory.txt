@@ -57,6 +57,7 @@
 ./server/src/db.ts
 ./server/src/errors.ts
 ./server/src/index.ts
+./server/src/llm-types.ts
 ./server/src/llm.ts
 ./server/src/logger.ts
 ./server/src/multi-agent.ts
@@ -66,6 +67,7 @@
 ./server/src/provider-diagnostics.ts
 ./server/src/providers.test.ts
 ./server/src/providers.ts
+./server/src/providers/base-url.ts
 ./server/src/providers/registry.ts
 ./server/src/providers/types.ts
 ./server/src/redaction.test.ts
@@ -227,6 +229,7 @@ server/src/providers/types.ts:116:  upstreamRequestId?: string;
 server/src/providers/types.ts:138:  upstreamRequestId?: string;
 server/src/providers/types.ts:145:  | { type: 'done'; model: string; upstreamRequestId?: string };
 server/src/providers/types.ts:161:  streamChatCompletion?(input: ProviderChatInput): AsyncIterable<ProviderStreamEvent>;
+server/src/providers/base-url.ts:109:export function providerCatalogEntry(definition: ProviderDefinition) {
 server/src/providers/registry.ts:19:    streaming: true,
 server/src/providers/registry.ts:55:    capabilities: { modelDiscovery: false, streaming: true, tools: true, vision: true, embeddings: false, responsesApi: false },
 server/src/providers/registry.ts:70:    capabilities: { modelDiscovery: true, streaming: true, tools: null, vision: true, embeddings: true, responsesApi: false },
@@ -338,6 +341,7 @@ server/src/upstream-errors.ts:136:  domain: UpstreamDomain,
 server/src/upstream-errors.ts:141:  const mapped = classifyUpstreamError(error);
 server/src/upstream-errors.ts:142:  const details: UpstreamErrorDetails = {
 server/src/upstream-errors.ts:146:    ...(mapped.upstreamStatus !== undefined ? { upstreamStatus: mapped.upstreamStatus } : {}),
+server/src/llm-types.ts:33:  upstreamRequestId?: string;
 server/src/app.integration.test.ts:93:  it('saves provider configuration without forcing a paid upstream request', async () => {
 server/src/app.integration.test.ts:113:  it('saves integrations without an upstream call and marks them untested', async () => {
 server/src/routes.ts:5:import { completeAgentStep, diagnoseProviderConnection, listProviderModels, LLMError, type LLMToolSpec, type Msg, type Provider } from './llm.js';
