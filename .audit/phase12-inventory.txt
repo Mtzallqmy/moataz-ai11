@@ -53,6 +53,7 @@
 ./server/src/config.test.ts
 ./server/src/config.ts
 ./server/src/crypto.ts
+./server/src/database/client.ts
 ./server/src/database/schema.ts
 ./server/src/db-cli.ts
 ./server/src/db.ts
@@ -159,6 +160,9 @@ server/src/db.ts:279:  await run('INSERT INTO schema_migrations (version) SELECT
 server/src/db.ts:280:  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.5.0', 'phase1-1.5.0']);
 server/src/db.ts:286:    await run(
 server/src/db.ts:304:    await get('SELECT 1 AS ok');
+server/src/database/client.ts:56:      await client.query('SELECT 1');
+server/src/database/client.ts:77:    await pool.query({ text: 'SELECT 1', query_timeout: Math.min(config.databaseStatementTimeoutMs, 5_000) });
+server/src/database/client.ts:89:  return database.transaction(callback);
 server/src/app.test.ts:8:    expect(app.get('trust proxy')).toBe(1);
 server/src/app.test.ts:11:      .get('/api/unknown')
 server/src/app.test.ts:22:      .get('/api/health')
@@ -436,6 +440,9 @@ client/src/pages/TerminalPage.tsx:9:type TerminalEvent = { type: 'session_starte
 ./server/src/db.ts:313:  const rows = await query<{ version: string }>('SELECT version FROM schema_migrations ORDER BY applied_at ASC');
 ./server/src/database/schema.ts:1:import { sql } from 'drizzle-orm';
 ./server/src/database/schema.ts:15:} from 'drizzle-orm/pg-core';
+./server/src/database/client.ts:1:import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
+./server/src/database/client.ts:26:export const pool = new Pool({
+./server/src/database/client.ts:41:export const database: NodePgDatabase<typeof schema> = drizzle(pool, { schema });
 ./server/src/config.ts:72:  DATABASE_URL: optionalTrimmedString,
 ./server/src/config.ts:73:  DATABASE_SSL_MODE: z.enum(['disable', 'require', 'verify-full']).default('disable'),
 ./server/src/config.ts:74:  DATABASE_POOL_MAX: positiveInt(10),
