@@ -84,6 +84,7 @@
 ./server/src/redaction.test.ts
 ./server/src/redaction.ts
 ./server/src/repositories/providers.repository.ts
+./server/src/repositories/sessions.repository.ts
 ./server/src/repositories/users.repository.ts
 ./server/src/routes.test.ts
 ./server/src/routes.ts
@@ -112,6 +113,7 @@ server/src/providers/model-discovery.ts:40:    const active = inflight.get(key);
 server/src/providers/http.ts:40:    const value = headers.get(name)?.trim();
 server/src/providers/http.ts:103:    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
 server/src/providers/registry.ts:104:  const definition = registry.get(id);
+server/src/repositories/sessions.repository.ts:82:    await database.transaction(async (tx) => {
 server/src/repositories/providers.repository.ts:242:    await database.transaction(async (tx) => {
 server/src/tools.ts:357:      return { url: response.url, status: response.status, contentType: response.headers.get('content-type'), response: payload };
 server/src/tools.ts:368:      const contentType = response.headers.get('content-type') ?? '';
@@ -424,6 +426,7 @@ client/src/pages/TerminalPage.tsx:9:type TerminalEvent = { type: 'session_starte
 ./server/src/config.test.ts:9:  DATABASE_URL: 'postgresql://user:password@example.com:5432/app',
 ./server/src/config.test.ts:68:      'DATABASE_URL',
 ./server/src/config.test.ts:93:    const config = loadConfig({ ...railwayBase, DATABASE_URL: 'file:./data/moataz.db' });
+./server/src/repositories/sessions.repository.ts:1:import { and, desc, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 ./server/src/repositories/providers.repository.ts:1:import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 ./server/src/repositories/users.repository.ts:1:import { eq, sql } from 'drizzle-orm';
 ./server/src/db.ts:4:import Database from 'better-sqlite3';
