@@ -1,10 +1,12 @@
 .analysis/README.md
 .analysis/current-state.md
 .analysis/phase-plan.md
+.analysis/relevant-files.txt
 .analysis/tree.txt
 .dockerignore
 .env.example
 .github/workflows/ci.yml
+.github/workflows/export-source.yml
 .github/workflows/generate-analysis-snapshot.yml
 .gitignore
 .npmrc
