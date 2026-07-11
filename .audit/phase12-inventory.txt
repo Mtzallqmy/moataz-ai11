@@ -85,6 +85,7 @@
 ./server/src/redaction.ts
 ./server/src/repositories/chats.repository.ts
 ./server/src/repositories/integrations.repository.ts
+./server/src/repositories/messages.repository.ts
 ./server/src/repositories/providers.repository.ts
 ./server/src/repositories/sessions.repository.ts
 ./server/src/repositories/users.repository.ts
@@ -117,6 +118,7 @@ server/src/providers/http.ts:103:    const contentType = response.headers.get('c
 server/src/providers/registry.ts:104:  const definition = registry.get(id);
 server/src/repositories/sessions.repository.ts:82:    await database.transaction(async (tx) => {
 server/src/repositories/providers.repository.ts:242:    await database.transaction(async (tx) => {
+server/src/repositories/messages.repository.ts:70:    return database.transaction(async (tx) => {
 server/src/tools.ts:357:      return { url: response.url, status: response.status, contentType: response.headers.get('content-type'), response: payload };
 server/src/tools.ts:368:      const contentType = response.headers.get('content-type') ?? '';
 server/src/tools.ts:409:        const response = await new Octokit({ auth: integration.token }).repos.get({ owner, repo });
@@ -431,6 +433,7 @@ client/src/pages/TerminalPage.tsx:9:type TerminalEvent = { type: 'session_starte
 ./server/src/repositories/sessions.repository.ts:1:import { and, desc, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 ./server/src/repositories/providers.repository.ts:1:import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 ./server/src/repositories/users.repository.ts:1:import { eq, sql } from 'drizzle-orm';
+./server/src/repositories/messages.repository.ts:1:import { and, asc, desc, eq, sql } from 'drizzle-orm';
 ./server/src/repositories/integrations.repository.ts:1:import { and, desc, eq, sql } from 'drizzle-orm';
 ./server/src/repositories/chats.repository.ts:1:import { and, desc, eq, sql } from 'drizzle-orm';
 ./server/src/db.ts:4:import Database from 'better-sqlite3';
