@@ -28,13 +28,26 @@ jobs:
             echo 'Transformations already applied.'
             exit 0
           fi
-          python3 .bootstrap/v15/apply.py
+          if [ -s .bootstrap/v15/last-error.txt ]; then
+            echo 'A transformation error is already recorded for review.'
+            exit 0
+          fi
+          set +e
+          output="$(python3 .bootstrap/v15/apply.py 2>&1)"
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            git reset --hard HEAD
+            printf '%s\n' "$output" > .bootstrap/v15/last-error.txt
+            echo 'Transformation failed; diagnostic file will be committed.'
+            exit 0
+          fi
           python3 .bootstrap/v15/client.py
           rm -rf .bootstrap/v15
           rmdir .bootstrap 2>/dev/null || true
           rm -f .github/workflows/apply-v1.5.yml
 
-      - name: Commit implementation
+      - name: Commit implementation or diagnostics
         shell: bash
         run: |
           set -euo pipefail
@@ -45,5 +58,5 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
-          git commit -m 'feat: stabilize providers, sessions, attachments and agents v1.5'
+          git commit -m 'chore: apply or diagnose v1.5 transformations'
           git push origin HEAD:${{ github.head_ref }}
