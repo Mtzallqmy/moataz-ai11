@@ -21,7 +21,10 @@
     "db:check": "tsx server/src/db-cli.ts check",
     "postinstall": "node scripts/ensure-runtime-dirs.mjs",
     "db:studio": "drizzle-kit studio",
-    "db:seed": "tsx server/src/db-cli.ts seed"
+    "db:seed": "tsx server/src/db-cli.ts seed",
+    "db:migrate:prod": "node dist/server/db-cli.js migrate",
+    "db:check:prod": "node dist/server/db-cli.js check",
+    "db:seed:prod": "node dist/server/db-cli.js seed"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",

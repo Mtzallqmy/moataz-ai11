@@ -56,8 +56,8 @@ DATABASE_MIGRATIONS_ON_STARTUP=false
 Preferred production sequence:
 
 1. deploy a release job or temporary Railway command with the same image;
-2. run `npm run db:migrate` once;
-3. run `npm run db:check`;
+2. run `npm run db:migrate:prod` once from the built production image;
+3. run `npm run db:check:prod`;
 4. deploy/start the web service with `DATABASE_MIGRATIONS_ON_STARTUP=false`;
 5. verify `/api/ready` returns HTTP 200.
 
