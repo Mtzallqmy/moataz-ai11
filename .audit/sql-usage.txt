@@ -96,92 +96,107 @@ server/src/app.integration.test.ts:79:    await run('UPDATE websocket_tickets SE
 server/src/app.integration.test.ts:147:    await run('INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, ?)', [otherUserId, 'other@example.com', hash, 'Other', 'user', 1]);
 server/src/app.integration.test.ts:149:    await run('INSERT INTO providers (id, user_id, name, type, api_key_enc, default_model) VALUES (?, ?, ?, ?, ?, ?)', [providerId, otherUserId, 'Other provider', 'openai', encrypt('test-key'), 'test-model']);
 server/src/app.integration.test.ts:154:    await run('INSERT INTO chats (id, user_id, title, mode) VALUES (?, ?, ?, ?)', [chatId, otherUserId, 'Private', 'chat']);
-server/src/routes.ts:201:  return get<ProviderRow>(
-server/src/routes.ts:202:    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
-server/src/routes.ts:226:  const rows = await query<ProviderRow>(
-server/src/routes.ts:227:    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
-server/src/routes.ts:239:  const rows = await query<ProviderRow>(
-server/src/routes.ts:240:    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
-server/src/routes.ts:248:  await run('UPDATE chats SET provider_id = ?, model = COALESCE(model, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [selected.id, selected.default_model, chat.id, userId]);
-server/src/routes.ts:265:  const rows = await query<IntegrationRow>("SELECT id, user_id, type, name, token_enc, meta, validation_status, validation_error_code, validated_at FROM integrations WHERE user_id = ? AND is_active = 1 AND validation_status = 'verified'", [userId]);
-server/src/routes.ts:539:    await transaction([
-server/src/routes.ts:541:        sql: `UPDATE providers SET default_model = ?, validation_status = 'verified', validation_error_code = NULL,
-server/src/routes.ts:546:        sql: 'UPDATE chats SET model = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
-server/src/routes.ts:555:  const rows = await query<ProviderRow>(
-server/src/routes.ts:556:    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
-server/src/routes.ts:603:      const providers = await query<{ validation_status: string }>('SELECT validation_status FROM providers WHERE user_id = ? AND is_active = 1', [req.user!.id]);
-server/src/routes.ts:604:      const integrations = await query<{ type: string; validation_status: string }>('SELECT type, validation_status FROM integrations WHERE user_id = ? AND is_active = 1', [req.user!.id]);
-server/src/routes.ts:650:        `SELECT id, name, type, base_url, default_model, validation_status,
-server/src/routes.ts:669:      await run(
-server/src/routes.ts:670:        `INSERT INTO providers
-server/src/routes.ts:709:      await run(
-server/src/routes.ts:710:        `UPDATE providers
-server/src/routes.ts:728:      await transaction([
-server/src/routes.ts:730:          sql: `UPDATE providers SET is_active = 0, updated_at = CURRENT_TIMESTAMP
-server/src/routes.ts:735:          sql: `UPDATE chats SET provider_id = NULL, model = NULL, updated_at = CURRENT_TIMESTAMP
-server/src/routes.ts:811:      await transaction([
-server/src/routes.ts:813:          sql: `UPDATE providers SET default_model = ?, validation_status = 'verified', validation_error_code = NULL,
-server/src/routes.ts:818:          sql: 'UPDATE chats SET model = ?, updated_at = CURRENT_TIMESTAMP WHERE provider_id = ? AND user_id = ?',
-server/src/routes.ts:825:      await run(
-server/src/routes.ts:826:        `UPDATE providers SET validation_status = 'failed', validation_error_code = ?,
-server/src/routes.ts:836:      const rows = await query<{ id: string; type: string; name: string; meta: string | null; validation_status: string; validation_error_code: string | null; validated_at: string | null; created_at: string; updated_at: string }>(
-server/src/routes.ts:837:        `SELECT id, type, name, meta, validation_status, validation_error_code,
-server/src/routes.ts:864:      await run(
-server/src/routes.ts:865:        `INSERT INTO integrations
-server/src/routes.ts:889:      const existing = await get<IntegrationRow>(
-server/src/routes.ts:890:        `SELECT id, user_id, type, name, token_enc, meta, validation_status,
-server/src/routes.ts:898:      await run(
-server/src/routes.ts:899:        `UPDATE integrations SET name = ?, token_enc = ?, meta = ?, validation_status = 'untested',
-server/src/routes.ts:917:      const existing = await get<IntegrationRow>(
-server/src/routes.ts:918:        `SELECT id, user_id, type, name, token_enc, meta, validation_status,
-server/src/routes.ts:926:      await run(
-server/src/routes.ts:927:        `UPDATE integrations SET meta = ?, validation_status = 'verified', validation_error_code = NULL,
-server/src/routes.ts:937:      await run(
-server/src/routes.ts:938:        `UPDATE integrations SET validation_status = 'failed', validation_error_code = ?,
-server/src/routes.ts:950:      const existing = await get('SELECT id FROM integrations WHERE id = ? AND user_id = ? AND is_active = 1', [id, req.user!.id]);
-server/src/routes.ts:952:      await run('UPDATE integrations SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [id, req.user!.id]);
-server/src/routes.ts:963:        `SELECT c.id, c.user_id, c.title, c.provider_id, c.model, c.mode, c.created_at, c.updated_at,
-server/src/routes.ts:987:      await run(
-server/src/routes.ts:988:        'INSERT INTO chats (id, user_id, title, provider_id, model, mode) VALUES (?, ?, ?, ?, ?, ?)',
-server/src/routes.ts:1001:      const existing = await get<ChatRow>('SELECT * FROM chats WHERE id = ? AND user_id = ?', [id, req.user!.id]);
-server/src/routes.ts:1012:      await run(
-server/src/routes.ts:1013:        `UPDATE chats SET title = ?, provider_id = ?, model = ?, mode = ?, updated_at = CURRENT_TIMESTAMP
-server/src/routes.ts:1026:      const existing = await get('SELECT id FROM chats WHERE id = ? AND user_id = ?', [id, req.user!.id]);
-server/src/routes.ts:1028:      await run('DELETE FROM chats WHERE id = ? AND user_id = ?', [id, req.user!.id]);
-server/src/routes.ts:1043:        const chat = await get('SELECT id FROM chats WHERE id = ? AND user_id = ?', [chatId, req.user!.id]);
-server/src/routes.ts:1075:      const chat = await get('SELECT id FROM chats WHERE id = ? AND user_id = ?', [id, req.user!.id]);
-server/src/routes.ts:1078:        query<MessageRow>(
-server/src/routes.ts:1079:          'SELECT id, chat_id, role, content, tool_calls, idempotency_key, created_at FROM messages WHERE chat_id = ? ORDER BY created_at ASC',
-server/src/routes.ts:1104:      const chat = await get<ChatRow>('SELECT * FROM chats WHERE id = ? AND user_id = ?', [chatId, req.user!.id]);
-server/src/routes.ts:1107:      const existingAssistant = await get<MessageRow>(
-server/src/routes.ts:1108:        `SELECT id, chat_id, role, content, tool_calls, idempotency_key, created_at
-server/src/routes.ts:1118:      const existingUser = await get('SELECT id FROM messages WHERE chat_id = ? AND idempotency_key = ? AND role = ?', [chatId, key, 'user']);
-server/src/routes.ts:1124:      const running = await get('SELECT id FROM agent_runs WHERE chat_id = ? AND status = ?', [chatId, 'running']);
-server/src/routes.ts:1129:      const previousRows = await query<{ role: string; content: string }>(
-server/src/routes.ts:1130:        'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?',
-server/src/routes.ts:1137:      await transaction([
-server/src/routes.ts:1139:          sql: 'INSERT INTO messages (id, chat_id, user_id, role, content, idempotency_key) VALUES (?, ?, ?, ?, ?, ?)',
-server/src/routes.ts:1143:          sql: 'INSERT INTO agent_runs (id, chat_id, user_id, status, log, started_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
-server/src/routes.ts:1147:          sql: 'UPDATE attachments SET message_id = ? WHERE id = ? AND chat_id = ? AND user_id = ? AND message_id IS NULL',
-server/src/routes.ts:1258:      await transaction([
-server/src/routes.ts:1260:          sql: 'INSERT INTO messages (id, chat_id, user_id, role, content, tool_calls, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?)',
-server/src/routes.ts:1264:          sql: 'UPDATE chats SET updated_at = CURRENT_TIMESTAMP, title = CASE WHEN title = ? THEN ? ELSE title END WHERE id = ? AND user_id = ?',
-server/src/routes.ts:1268:          sql: 'UPDATE agent_runs SET status = ?, log = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
-server/src/routes.ts:1283:      await transaction([
-server/src/routes.ts:1285:          sql: 'UPDATE attachments SET message_id = NULL WHERE message_id = ? AND chat_id = ? AND user_id = ?',
-server/src/routes.ts:1289:          sql: 'DELETE FROM messages WHERE id = ? AND chat_id = ? AND user_id = ? AND role = ?',
-server/src/routes.ts:1295:      await run('UPDATE agent_runs SET status = ?, error_code = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?', ['failed', errorCode(error), runId]).catch(() => undefined);
+server/src/routes.ts:203:  return get<ProviderRow>(
+server/src/routes.ts:204:    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
+server/src/routes.ts:228:  const rows = await query<ProviderRow>(
+server/src/routes.ts:229:    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
+server/src/routes.ts:241:  const rows = await query<ProviderRow>(
+server/src/routes.ts:242:    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
+server/src/routes.ts:250:  await run('UPDATE chats SET provider_id = ?, model = COALESCE(model, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [selected.id, selected.default_model, chat.id, userId]);
+server/src/routes.ts:267:  const rows = await query<IntegrationRow>("SELECT id, user_id, type, name, token_enc, meta, validation_status, validation_error_code, validated_at FROM integrations WHERE user_id = ? AND is_active = 1 AND validation_status = 'verified'", [userId]);
+server/src/routes.ts:534:    await transaction([
+server/src/routes.ts:536:        sql: `UPDATE providers SET default_model = ?, validation_status = 'verified', validation_error_code = NULL,
+server/src/routes.ts:541:        sql: 'UPDATE chats SET model = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+server/src/routes.ts:550:  const rows = await query<ProviderRow>(
+server/src/routes.ts:551:    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
+server/src/routes.ts:598:      const providers = await query<{ validation_status: string }>('SELECT validation_status FROM providers WHERE user_id = ? AND is_active = 1', [req.user!.id]);
+server/src/routes.ts:599:      const integrations = await query<{ type: string; validation_status: string }>('SELECT type, validation_status FROM integrations WHERE user_id = ? AND is_active = 1', [req.user!.id]);
+server/src/routes.ts:659:        `SELECT id, name, type, base_url, default_model, validation_status,
+server/src/routes.ts:678:      await run(
+server/src/routes.ts:679:        `INSERT INTO providers
+server/src/routes.ts:718:      await run(
+server/src/routes.ts:719:        `UPDATE providers
+server/src/routes.ts:737:      await transaction([
+server/src/routes.ts:739:          sql: `UPDATE providers SET is_active = 0, updated_at = CURRENT_TIMESTAMP
+server/src/routes.ts:744:          sql: `UPDATE chats SET provider_id = NULL, model = NULL, updated_at = CURRENT_TIMESTAMP
+server/src/routes.ts:821:      await transaction([
+server/src/routes.ts:823:          sql: `UPDATE providers SET default_model = ?, validation_status = 'verified', validation_error_code = NULL,
+server/src/routes.ts:828:          sql: 'UPDATE chats SET model = ?, updated_at = CURRENT_TIMESTAMP WHERE provider_id = ? AND user_id = ?',
+server/src/routes.ts:835:      await run(
+server/src/routes.ts:836:        `UPDATE providers SET validation_status = 'failed', validation_error_code = ?,
+server/src/routes.ts:849:      const rows = await query<{ id: string; type: string; name: string; meta: string | null; validation_status: string; validation_error_code: string | null; validated_at: string | null; created_at: string; updated_at: string }>(
+server/src/routes.ts:850:        `SELECT id, type, name, meta, validation_status, validation_error_code,
+server/src/routes.ts:877:      await run(
+server/src/routes.ts:878:        `INSERT INTO integrations
+server/src/routes.ts:902:      const existing = await get<IntegrationRow>(
+server/src/routes.ts:903:        `SELECT id, user_id, type, name, token_enc, meta, validation_status,
+server/src/routes.ts:911:      await run(
+server/src/routes.ts:912:        `UPDATE integrations SET name = ?, token_enc = ?, meta = ?, validation_status = 'untested',
+server/src/routes.ts:930:      const existing = await get<IntegrationRow>(
+server/src/routes.ts:931:        `SELECT id, user_id, type, name, token_enc, meta, validation_status,
+server/src/routes.ts:939:      await run(
+server/src/routes.ts:940:        `UPDATE integrations SET meta = ?, validation_status = 'verified', validation_error_code = NULL,
+server/src/routes.ts:950:      await run(
+server/src/routes.ts:951:        `UPDATE integrations SET validation_status = 'failed', validation_error_code = ?,
+server/src/routes.ts:963:      const existing = await get('SELECT id FROM integrations WHERE id = ? AND user_id = ? AND is_active = 1', [id, req.user!.id]);
+server/src/routes.ts:965:      await run('UPDATE integrations SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [id, req.user!.id]);
+server/src/routes.ts:976:        `SELECT c.id, c.user_id, c.title, c.provider_id, c.model, c.mode, c.created_at, c.updated_at,
+server/src/routes.ts:1000:      await run(
+server/src/routes.ts:1001:        'INSERT INTO chats (id, user_id, title, provider_id, model, mode) VALUES (?, ?, ?, ?, ?, ?)',
+server/src/routes.ts:1014:      const existing = await get<ChatRow>('SELECT * FROM chats WHERE id = ? AND user_id = ?', [id, req.user!.id]);
+server/src/routes.ts:1025:      await run(
+server/src/routes.ts:1026:        `UPDATE chats SET title = ?, provider_id = ?, model = ?, mode = ?, updated_at = CURRENT_TIMESTAMP
+server/src/routes.ts:1039:      const existing = await get('SELECT id FROM chats WHERE id = ? AND user_id = ?', [id, req.user!.id]);
+server/src/routes.ts:1041:      await run('DELETE FROM chats WHERE id = ? AND user_id = ?', [id, req.user!.id]);
+server/src/routes.ts:1056:        const chat = await get('SELECT id FROM chats WHERE id = ? AND user_id = ?', [chatId, req.user!.id]);
+server/src/routes.ts:1088:      const chat = await get('SELECT id FROM chats WHERE id = ? AND user_id = ?', [id, req.user!.id]);
+server/src/routes.ts:1091:        query<MessageRow>(
+server/src/routes.ts:1092:          'SELECT id, chat_id, role, content, tool_calls, idempotency_key, created_at FROM messages WHERE chat_id = ? ORDER BY created_at ASC',
+server/src/routes.ts:1117:      const chat = await get<ChatRow>('SELECT * FROM chats WHERE id = ? AND user_id = ?', [chatId, req.user!.id]);
+server/src/routes.ts:1120:      const existingAssistant = await get<MessageRow>(
+server/src/routes.ts:1121:        `SELECT id, chat_id, role, content, tool_calls, idempotency_key, created_at
+server/src/routes.ts:1131:      const existingUser = await get('SELECT id FROM messages WHERE chat_id = ? AND idempotency_key = ? AND role = ?', [chatId, key, 'user']);
+server/src/routes.ts:1137:      const running = await get('SELECT id FROM agent_runs WHERE chat_id = ? AND status = ?', [chatId, 'running']);
+server/src/routes.ts:1142:      const previousRows = await query<{ role: string; content: string }>(
+server/src/routes.ts:1143:        'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?',
+server/src/routes.ts:1150:      await transaction([
+server/src/routes.ts:1152:          sql: 'INSERT INTO messages (id, chat_id, user_id, role, content, idempotency_key) VALUES (?, ?, ?, ?, ?, ?)',
+server/src/routes.ts:1156:          sql: 'INSERT INTO agent_runs (id, chat_id, user_id, status, log, started_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+server/src/routes.ts:1160:          sql: 'UPDATE attachments SET message_id = ? WHERE id = ? AND chat_id = ? AND user_id = ? AND message_id IS NULL',
+server/src/routes.ts:1271:      await transaction([
+server/src/routes.ts:1273:          sql: 'INSERT INTO messages (id, chat_id, user_id, role, content, tool_calls, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?)',
+server/src/routes.ts:1277:          sql: 'UPDATE chats SET updated_at = CURRENT_TIMESTAMP, title = CASE WHEN title = ? THEN ? ELSE title END WHERE id = ? AND user_id = ?',
+server/src/routes.ts:1281:          sql: 'UPDATE agent_runs SET status = ?, log = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+server/src/routes.ts:1296:      await transaction([
+server/src/routes.ts:1298:          sql: 'UPDATE attachments SET message_id = NULL WHERE message_id = ? AND chat_id = ? AND user_id = ?',
+server/src/routes.ts:1302:          sql: 'DELETE FROM messages WHERE id = ? AND chat_id = ? AND user_id = ? AND role = ?',
+server/src/routes.ts:1308:      await run('UPDATE agent_runs SET status = ?, error_code = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?', ['failed', errorCode(error), runId]).catch(() => undefined);
 
 # Provider imports and calls
 server/src/multi-agent.ts:1:import { complete, type LLMImage, type Msg, type Provider } from './llm.js';
-server/src/llm.ts:7:import { assertProviderCredentials, providerAdapter, providerDefinition } from './providers.js';
-server/src/llm.ts:276:export async function completeAgentStep(
-server/src/llm.ts:339:  const step = await completeAgentStep(provider, messages, model, [], externalSignal);
-server/src/llm.ts:361:export async function listProviderModels(provider: Provider): Promise<{ supported: boolean; models: string[] }> {
-server/src/llm.ts:416:export async function diagnoseProviderConnection(provider: Provider, preferredModel?: string): Promise<ProviderProbeResult> {
-server/src/llm.ts:417:  const discovery = await listProviderModels(provider);
-server/src/llm.ts:436:      const result = await testProviderConnection(provider, candidate);
-server/src/llm.ts:464:export async function testProviderConnection(provider: Provider, model?: string): Promise<{ message: string; model: string }> {
+server/src/llm.ts:79:export async function completeAgentStep(
+server/src/llm.ts:119:  return outputText((await completeAgentStep(provider, messages, model, [], externalSignal)).text);
+server/src/llm.ts:130:export async function listProviderModels(provider: Provider): Promise<{ supported: boolean; models: string[]; discovery?: ModelDiscoveryResult }> {
+server/src/llm.ts:154:export async function diagnoseProviderConnection(provider: Provider, preferredModel?: string): Promise<ProviderProbeResult> {
+server/src/llm.ts:248:export async function testProviderConnection(provider: Provider, model?: string): Promise<{ message: string; model: string; diagnostic: ProviderDiagnosticResult }> {
+server/src/providers/adapters/openai-compatible.adapter.ts:6:import { diagnoseProviderError, diagnosticToAppError, readyDiagnostic, unsupportedDiscoveryDiagnostic } from '../diagnostics.js';
+server/src/providers/adapters/openai-compatible.adapter.ts:232:        const diagnostic = diagnoseProviderError(error, { testedEndpoint: endpoint });
+server/src/providers/adapters/openai-compatible.adapter.ts:255:      const diagnostic = diagnoseProviderError(error, { testedEndpoint: configInput.resolvedModelsUrl ?? undefined });
+server/src/providers/adapters/openai-compatible.adapter.ts:276:      const diagnostic = diagnoseProviderError(error, {
+server/src/providers/adapters/openai-compatible.adapter.ts:333:        throw diagnosticToAppError(diagnoseProviderError(new Error('Invalid provider response schema.'), {
+server/src/providers/adapters/anthropic.adapter.ts:6:import { diagnoseProviderError, readyDiagnostic } from '../diagnostics.js';
+server/src/providers/adapters/anthropic.adapter.ts:117:        ...diagnoseProviderError(error, {
+server/src/providers/adapters/gemini.adapter.ts:6:import { diagnoseProviderError, readyDiagnostic } from '../diagnostics.js';
+server/src/providers/adapters/gemini.adapter.ts:116:      const diagnostic = diagnoseProviderError(error, { testedEndpoint: endpoint });
+server/src/providers/adapters/gemini.adapter.ts:146:        ...diagnoseProviderError(error, {
+server/src/providers/adapters/gemini.adapter.ts:214:      const diagnostic = diagnoseProviderError(error, { testedModel: input.model });
+server/src/providers/http.ts:3:import { diagnoseProviderError, diagnosticToAppError } from './diagnostics.js';
+server/src/providers/http.ts:119:      const diagnostic = diagnoseProviderError(error, {
+server/src/providers/http.ts:135:    const diagnostic: ProviderDiagnosticResult = diagnoseProviderError(error, {
+server/src/providers/base-url.ts:118:export function normalizeBaseUrlOnly(value: string): string {
+server/src/providers/index.ts:4:import { normalizeBaseUrlOnly, normalizeProviderUrls } from './base-url.js';
+server/src/providers/index.ts:40:  normalizeBaseUrlOnly,
+server/src/providers/diagnostics.ts:130:export function diagnoseProviderError(error: unknown, context: DiagnosticContext = {}): ProviderDiagnosticResult {
 server/src/providers.test.ts:2:import { assertProviderCredentials, normalizeBaseUrl, providerDefinition, resolveProviderBaseUrl } from './providers.js';
 server/src/providers.test.ts:20:    expect(normalizeBaseUrl('openrouter.ai/api/v1/chat/completions')).toBe('https://openrouter.ai/api/v1');
 server/src/providers.test.ts:26:    expect(() => normalizeBaseUrl('file:///tmp/model')).toThrow(/HTTP/i);
@@ -197,16 +212,19 @@ server/src/telegram.ts:488:  let step = await completeAgentStep(provider, messag
 server/src/telegram.ts:524:    step = await completeAgentStep(provider, messages, providerRow.default_model, availableTools);
 server/src/telegram.ts:585:      await diagnoseProvider(bot, row, message.chat.id, session);
 server/src/telegram.ts:702:      await diagnoseProvider(bot, row, message.chat.id, session);
-server/src/providers.ts:80:export function normalizeBaseUrl(value: string | undefined | null): string | undefined {
-server/src/providers.ts:111:  const suppliedUrl = normalizeBaseUrl(supplied);
-server/src/providers.ts:124:  return normalizeBaseUrl(providerDefinition(normalizedType).defaultBaseUrl);
+server/src/providers.ts:4:  normalizeBaseUrlOnly,
+server/src/providers.ts:54:export function normalizeBaseUrl(value: string | undefined | null): string | undefined {
+server/src/providers.ts:56:  return normalizeBaseUrlOnly(value);
 server/src/provider-diagnostics.ts:3:import type { ProviderProbeAttempt } from './llm.js';
 server/src/attachments.ts:8:import type { LLMImage } from './llm.js';
 server/src/routes.ts:5:import { completeAgentStep, diagnoseProviderConnection, listProviderModels, LLMError, type LLMToolSpec, type Msg, type Provider } from './llm.js';
 server/src/routes.ts:17:import { assertProviderCredentials, providerCatalog, resolveProviderBaseUrl } from './providers.js';
-server/src/routes.ts:307:  const result = await diagnoseProviderConnection(provider, preferredModel);
-server/src/routes.ts:534:    return await completeAgentStep(input.provider, input.messages, input.model, input.tools ?? []);
-server/src/routes.ts:537:    const probe = await diagnoseProviderConnection(input.provider, input.model ?? input.provider.defaultModel);
-server/src/routes.ts:550:    return completeAgentStep(input.provider, input.messages, probe.model, input.tools ?? []);
-server/src/routes.ts:774:      const result = await listProviderModels(modelDiscoveryProvider({ type: input.type, apiKey: input.apiKey, baseUrl: input.baseUrl }));
-server/src/routes.ts:787:      const result = await listProviderModels(providerFromRow(row));
+server/src/routes.ts:309:  const result = await diagnoseProviderConnection(provider, preferredModel);
+server/src/routes.ts:529:    return await completeAgentStep(input.provider, input.messages, input.model, input.tools ?? []);
+server/src/routes.ts:532:    const probe = await diagnoseProviderConnection(input.provider, input.model ?? input.provider.defaultModel);
+server/src/routes.ts:545:    return completeAgentStep(input.provider, input.messages, probe.model, input.tools ?? []);
+server/src/routes.ts:783:      const result = await listProviderModels(modelDiscoveryProvider({ type: input.type, apiKey: input.apiKey, baseUrl: input.baseUrl }));
+server/src/routes.ts:798:      const result = await listProviderModels(providerFromRow(row));
+server/src/routes.ts:805:  const retestProviderHandler = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+server/src/routes.ts:844:  app.post('/api/providers/:id/retest', auth, retestProviderHandler);
+server/src/routes.ts:845:  app.post('/api/providers/:id/test', auth, retestProviderHandler);
