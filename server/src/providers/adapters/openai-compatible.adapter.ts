@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { z } from 'zod';
 import { config } from '../../config.js';
 import { AppError } from '../../errors.js';
 import type { LLMToolCall, Msg } from '../../llm-types.js';
