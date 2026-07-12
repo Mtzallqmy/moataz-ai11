@@ -1,0 +1,54 @@
+name: Finalize phase 1-2 source
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.head_ref == 'feat/providers-drizzle-phase12'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Finalize reviewed source layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f server/src/routes/providers.phase12.ts ]; then
+            mv server/src/routes/providers.phase12.ts server/src/routes/providers.routes.ts
+          fi
+          if [ -f .bootstrap/phase12/fix_remaining_exact.py ]; then
+            python3 .bootstrap/phase12/fix_remaining_exact.py
+          fi
+          if [ -f .bootstrap/phase12/refactor_model_parser.py ]; then
+            python3 .bootstrap/phase12/refactor_model_parser.py
+          fi
+          if [ -f .bootstrap/phase12/fix_migration.py ]; then
+            python3 .bootstrap/phase12/fix_migration.py
+          fi
+          rm -rf .bootstrap
+          find .github/workflows -maxdepth 1 -type f ! -name ci.yml ! -name finalize-phase12-source.yml -delete
+          rm -f .github/workflows/finalize-phase12-source.yml
+
+      - name: Commit final source layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No source finalization changes were needed.'
+            exit 0
+          fi
+          git commit -m 'refactor: finalize strict phase 1-2 source layout'
+          git push origin HEAD:${{ github.head_ref }}
