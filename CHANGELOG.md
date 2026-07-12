@@ -2,6 +2,15 @@
 
 All notable changes are documented here. The project version is synchronized with `package.json`.
 
+## [Unreleased]
+
+### Optional OmniRoute gateway integration
+
+- Added OmniRoute as a separate OpenAI-compatible gateway provider without adding its Node 22/24 runtime to the Node 20 application image.
+- Added support for OmniRoute virtual models (`auto`, `auto/coding`, `auto/fast`, `auto/cheap`, `auto/offline`, and `auto/smart`) only when the selected provider is OmniRoute.
+- Added safe OmniRoute request-header allowlisting, live `/models` discovery, UI guidance, local/remote deployment instructions, and MIT attribution guidance.
+- Kept production SSRF protections intact: local OmniRoute URLs remain development-only, while Railway deployments require a separate public HTTPS service.
+
 ## [1.6.0] — 2026-07-12
 
 ### Unified provider runtime and NaraRouter
