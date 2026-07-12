@@ -1,9 +1,8 @@
-import type { Express, NextFunction, Response } from 'express';
+import type { Express, NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
-import type { AuthRequest } from '../auth.js';
-import { auth } from '../auth.js';
+import { auth, type AuthRequest } from '../auth.js';
 import { getProviderDefinition, providerRegistry, resolveProviderUrls } from '../providers/index.js';
-import { providersService, publicProvider } from '../services/providers.service.js';
+import { providersService, publicProvider, type ProviderDraftInput } from '../services/providers.service.js';
 import { parseInput, uuidSchema } from '../validation.js';
 
 const providerTypeSchema = z.string().trim().min(1).max(60);
@@ -18,7 +17,7 @@ const normalizeUrlSchema = z.object({
 const draftSchema = z.object({
   name: z.string().trim().min(1).max(100),
   type: providerTypeSchema,
-  apiKey: z.string().max(20_000).default(''),
+  apiKey: z.string().max(20_000),
   baseUrl: baseUrlSchema.optional(),
   selectedModel: modelSchema.nullable().optional(),
   defaultModel: modelSchema.optional(),
@@ -35,14 +34,27 @@ const updateSchema = z.object({
   model: modelSchema.optional()
 }).strict().refine((value) => Object.keys(value).length > 0, 'At least one field is required.');
 
-const discoverySchema = draftSchema.extend({ force: z.boolean().optional().default(false) });
+const discoverySchema = draftSchema.extend({ force: z.boolean().optional() });
+const forceQuerySchema = z.object({ force: z.enum(['true', 'false']).optional() }).strict();
 
-function id(req: AuthRequest): string {
+function routeId(req: Request): string {
   return parseInput(uuidSchema, req.params.id, 'invalid_provider_id');
 }
 
-function selectedModel(input: { selectedModel?: string | null; defaultModel?: string; model?: string }): string | null | undefined {
-  return input.selectedModel ?? input.defaultModel ?? input.model;
+function requestedModel(input: { selectedModel?: string | null | undefined; defaultModel?: string | undefined; model?: string | undefined }): string | null | undefined {
+  if (input.selectedModel !== undefined) return input.selectedModel;
+  return input.defaultModel ?? input.model;
+}
+
+function draftInput(input: z.output<typeof draftSchema>): ProviderDraftInput {
+  const model = requestedModel(input);
+  return {
+    name: input.name,
+    type: input.type,
+    apiKey: input.apiKey,
+    ...(input.baseUrl ? { baseUrl: input.baseUrl } : {}),
+    ...(model !== undefined ? { selectedModel: model } : {})
+  };
 }
 
 function requestId(res: Response): string | undefined {
@@ -71,26 +83,15 @@ export function providerRoutes(app: Express): void {
   app.post('/api/providers/normalize-url', auth, (req: AuthRequest, res, next) => {
     try {
       const input = parseInput(normalizeUrlSchema, req.body);
-      const resolved = resolveProviderUrls(input.type, input.baseUrl);
-      res.json({
-        success: true,
-        provider: getProviderDefinition(input.type).id,
-        ...resolved
-      });
+      res.json({ success: true, provider: getProviderDefinition(input.type).id, ...resolveProviderUrls(input.type, input.baseUrl) });
     } catch (error) { next(error); }
   });
 
   const discoverDraft = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const input = parseInput(discoverySchema, req.body);
-      const result = await providersService.discoverDraft({
-        name: input.name,
-        type: input.type,
-        apiKey: input.apiKey,
-        baseUrl: input.baseUrl,
-        selectedModel: selectedModel(input)
-      }, input.force);
-      res.json({ success: true, ...result, models: result.models });
+      const result = await providersService.discoverDraft(draftInput(input), input.force === true);
+      res.json({ success: true, ...result });
     } catch (error) { next(error); }
   };
   app.post('/api/providers/discover-models', auth, discoverDraft);
@@ -99,13 +100,8 @@ export function providerRoutes(app: Express): void {
   app.post('/api/providers/test', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const input = parseInput(draftSchema, req.body);
-      const result = await providersService.testDraft({
-        name: input.name,
-        type: input.type,
-        apiKey: input.apiKey,
-        baseUrl: input.baseUrl,
-        selectedModel: selectedModel(input)
-      }, requestId(res));
+      const id = requestId(res);
+      const result = await providersService.testDraft(draftInput(input), id);
       res.json({
         success: true,
         ok: true,
@@ -120,21 +116,14 @@ export function providerRoutes(app: Express): void {
   });
 
   app.get('/api/providers', auth, async (req: AuthRequest, res, next): Promise<void> => {
-    try {
-      res.json({ providers: await providersService.list(req.user!.id) });
-    } catch (error) { next(error); }
+    try { res.json({ providers: await providersService.list(req.user!.id) }); }
+    catch (error) { next(error); }
   });
 
   app.post('/api/providers', auth, async (req: AuthRequest, res, next): Promise<void> => {
     try {
       const input = parseInput(draftSchema, req.body);
-      const row = await providersService.createDraft(req.user!.id, {
-        name: input.name,
-        type: input.type,
-        apiKey: input.apiKey,
-        baseUrl: input.baseUrl,
-        selectedModel: selectedModel(input)
-      });
+      const row = await providersService.createDraft(req.user!.id, draftInput(input));
       res.status(201).json({ success: true, provider: publicProvider(row) });
     } catch (error) { next(error); }
   });
@@ -142,19 +131,24 @@ export function providerRoutes(app: Express): void {
   app.patch('/api/providers/:id', auth, async (req: AuthRequest, res, next): Promise<void> => {
     try {
       const input = parseInput(updateSchema, req.body);
-      const row = await providersService.updateDraft(req.user!.id, id(req), {
-        ...input,
-        baseUrl: input.baseUrl === null ? undefined : input.baseUrl,
-        selectedModel: selectedModel(input)
-      });
+      const model = requestedModel(input);
+      const patch: Partial<ProviderDraftInput> = {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.type !== undefined ? { type: input.type } : {}),
+        ...(input.apiKey !== undefined ? { apiKey: input.apiKey } : {}),
+        ...(input.baseUrl !== undefined && input.baseUrl !== null ? { baseUrl: input.baseUrl } : {}),
+        ...(model !== undefined ? { selectedModel: model } : {})
+      };
+      const row = await providersService.updateDraft(req.user!.id, routeId(req), patch);
       res.json({ success: true, provider: publicProvider(row) });
     } catch (error) { next(error); }
   });
 
   const discoverSaved = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const result = await providersService.discoverSaved(req.user!.id, id(req), req.query.force === 'true');
-      res.json({ success: true, ...result, models: result.models });
+      const query = parseInput(forceQuerySchema, req.query, 'invalid_provider_query');
+      const result = await providersService.discoverSaved(req.user!.id, routeId(req), query.force === 'true');
+      res.json({ success: true, ...result });
     } catch (error) { next(error); }
   };
   app.get('/api/providers/:id/models', auth, discoverSaved);
@@ -162,7 +156,7 @@ export function providerRoutes(app: Express): void {
 
   const retest = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const result = await providersService.retest(req.user!.id, id(req), requestId(res));
+      const result = await providersService.retest(req.user!.id, routeId(req), requestId(res));
       res.json({
         success: true,
         ok: true,
@@ -179,7 +173,7 @@ export function providerRoutes(app: Express): void {
 
   app.delete('/api/providers/:id', auth, async (req: AuthRequest, res, next): Promise<void> => {
     try {
-      await providersService.disable(req.user!.id, id(req));
+      await providersService.disable(req.user!.id, routeId(req));
       res.json({ success: true, ok: true });
     } catch (error) { next(error); }
   });
