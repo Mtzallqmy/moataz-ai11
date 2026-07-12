@@ -54,6 +54,19 @@ type ProviderRequestInput = {
   allowPrivate?: boolean | undefined;
 };
 
+function safeEndpoint(value: string): string {
+  try {
+    const url = new URL(value);
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return url.toString().replace(/\/$/, '');
+  } catch {
+    return '[invalid-provider-url]';
+  }
+}
+
 function requestId(headers: Headers): string | undefined {
   for (const name of ['x-request-id', 'request-id', 'x-amzn-requestid', 'cf-ray', 'x-goog-request-id']) {
     const value = headers.get(name)?.trim();
@@ -109,7 +122,7 @@ async function providerResponse(input: ProviderRequestInput): Promise<ProviderSt
       maxRedirects: config.providerMaxRedirects,
       allowPrivate: input.allowPrivate === true
     });
-    const endpoint = response.url || input.url;
+    const endpoint = safeEndpoint(response.url || input.url);
     const upstreamRequestId = requestId(response.headers);
     return {
       response,
@@ -123,8 +136,10 @@ async function providerResponse(input: ProviderRequestInput): Promise<ProviderSt
     if (error instanceof ProviderHttpError) throw error;
     if (error instanceof AppError) throw error;
     const code = error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
-    throw new ProviderHttpError(error instanceof Error ? error.message : String(error), {
-      endpoint: input.url,
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    const message = rawMessage.split(input.url).join(safeEndpoint(input.url));
+    throw new ProviderHttpError(message, {
+      endpoint: safeEndpoint(input.url),
       ...(code ? { causeCode: code } : {})
     });
   }
