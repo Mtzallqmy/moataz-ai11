@@ -1,0 +1,183 @@
+name: Finalize phase 1-2 repository
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.head_ref == 'feat/providers-drizzle-phase12'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Finalize source, migration safety, and docs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          root = Path('.')
+
+          phase_route = root / 'server/src/routes/providers.phase12.ts'
+          if phase_route.exists():
+              phase_route.replace(root / 'server/src/routes/providers.routes.ts')
+
+          client = root / 'server/src/database/client.ts'
+          text = client.read_text()
+          text = re.sub(
+              r"\nexport async function withTransaction<[\s\S]*?\n}\n?$",
+              "\n",
+              text,
+              count=1
+          )
+          client.write_text(text)
+
+          migration = root / 'drizzle/0000_phase12_postgres.sql'
+          sql = migration.read_text()
+          duplicate_guard = """WITH ranked_messages AS (
+            SELECT id, row_number() OVER (
+              PARTITION BY chat_id, idempotency_key, role
+              ORDER BY created_at ASC, id ASC
+            ) AS duplicate_rank
+            FROM messages
+            WHERE idempotency_key IS NOT NULL
+          )
+          UPDATE messages
+          SET idempotency_key = NULL
+          FROM ranked_messages
+          WHERE messages.id = ranked_messages.id AND ranked_messages.duplicate_rank > 1;
+          WITH ranked_runs AS (
+            SELECT id, row_number() OVER (
+              PARTITION BY chat_id
+              ORDER BY started_at DESC, created_at DESC, id DESC
+            ) AS running_rank
+            FROM agent_runs
+            WHERE status = 'running'
+          )
+          UPDATE agent_runs
+          SET status = 'failed',
+              error_code = COALESCE(error_code, 'migration_duplicate_running_run'),
+              error_message = COALESCE(error_message, 'A duplicate running agent run was closed during migration.'),
+              finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP),
+              completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP),
+              updated_at = CURRENT_TIMESTAMP
+          FROM ranked_runs
+          WHERE agent_runs.id = ranked_runs.id AND ranked_runs.running_rank > 1;
+          --> statement-breakpoint
+          """
+          marker = "CREATE UNIQUE INDEX IF NOT EXISTS messages_chat_sequence_unique"
+          if duplicate_guard.strip() not in sql and marker in sql:
+              sql = sql.replace(marker, duplicate_guard + marker, 1)
+          if 'CREATE UNIQUE INDEX IF NOT EXISTS websocket_tickets_hash_unique' not in sql:
+              sql = sql.replace(
+                  'CREATE INDEX IF NOT EXISTS websocket_tickets_expiry_idx',
+                  'CREATE UNIQUE INDEX IF NOT EXISTS websocket_tickets_hash_unique ON websocket_tickets(token_hash);\nCREATE INDEX IF NOT EXISTS websocket_tickets_expiry_idx',
+                  1
+              )
+          sql = sql.replace(
+              'finished_at = COALESCE(agent_runs.finished_at, agent_runs.completed_at),',
+              "finished_at = COALESCE(agent_runs.finished_at, agent_runs.completed_at, CASE WHEN agent_runs.status IN ('completed','failed','cancelled') THEN agent_runs.created_at END),"
+          )
+          migration.write_text(sql)
+
+          config = (root / 'server/src/config.ts').read_text()
+          keys = []
+          for match in re.finditer(r'^\s{2}([A-Z][A-Z0-9_]+):\s', config, re.MULTILINE):
+              key = match.group(1)
+              if key.startswith('RAILWAY_') or key in keys:
+                  continue
+              keys.append(key)
+          preferred = [
+              'NODE_ENV','APP_URL','CORS_ORIGIN','TRUST_PROXY','JWT_SECRET','JWT_ACCESS_TTL_SECONDS',
+              'REFRESH_TOKEN_TTL_SECONDS','ENCRYPTION_KEY','DATABASE_URL','DATABASE_SSL_MODE',
+              'DATABASE_POOL_MAX','DATABASE_IDLE_TIMEOUT_MS','DATABASE_CONNECTION_TIMEOUT_MS',
+              'DATABASE_STATEMENT_TIMEOUT_MS','DATABASE_STARTUP_RETRIES','DATABASE_MIGRATIONS_ON_STARTUP',
+              'DEFAULT_ADMIN_EMAIL','DEFAULT_ADMIN_PASSWORD','WORKSPACE_DIR','ALLOW_SHELL','SHELL_SANDBOX_MODE',
+              'TELEGRAM_POLLING','LOG_LEVEL','PROVIDER_DISCOVERY_TIMEOUT_MS','PROVIDER_REQUEST_TIMEOUT_MS',
+              'PROVIDER_MAX_RESPONSE_BYTES','PROVIDER_MAX_REDIRECTS','PROVIDER_MODEL_CACHE_TTL_MS',
+              'ALLOW_PRIVATE_PROVIDER_URLS'
+          ]
+          ordered = [key for key in preferred if key in keys] + [key for key in keys if key not in preferred]
+          (root / '.env.example').write_text('\n'.join(f'{key}=' for key in ordered) + '\n')
+
+          package_path = root / 'package.json'
+          package = json.loads(package_path.read_text())
+          package['version'] = '2.0.0'
+          package['description'] = 'Moataz AI production SaaS agent platform with typed multi-provider adapters and PostgreSQL/Drizzle persistence.'
+          package_path.write_text(json.dumps(package, indent=2, ensure_ascii=False) + '\n')
+          lock_path = root / 'package-lock.json'
+          lock = json.loads(lock_path.read_text())
+          lock['version'] = '2.0.0'
+          lock.setdefault('packages', {}).setdefault('', {})['version'] = '2.0.0'
+          lock_path.write_text(json.dumps(lock, indent=2, ensure_ascii=False) + '\n')
+
+          readme = root / 'README.md'
+          readme_text = readme.read_text()
+          heading = '## Provider Registry and PostgreSQL/Drizzle (2.0.0)'
+          if heading not in readme_text:
+              readme_text += f"""
+
+          {heading}
+
+          Version 2.0.0 completes two bounded architecture phases only:
+
+          - a typed provider registry with native Anthropic and Gemini adapters, OpenAI-compatible adapters, safe Base URL normalization, SSRF protection, bounded model discovery, real inference probes, streaming, tools, and structured diagnostics;
+          - a PostgreSQL/Supabase-only persistence layer using Drizzle ORM, tracked data-preserving migrations, typed repositories, hashed sessions/tickets, stable message sequencing, structured agent runs/steps/tool executions, and PostgreSQL integration tests.
+
+          Provider and integration credentials are entered through the authenticated UI and stored encrypted. They are not frontend or Railway provider-key variables. Read `docs/PHASE12_ARCHITECTURE.md` and `docs/RAILWAY_SUPABASE_PHASE12.md` before deployment.
+          """
+              readme.write_text(readme_text)
+
+          changelog = root / 'CHANGELOG.md'
+          change_text = changelog.read_text()
+          release = """## [2.0.0] — 2026-07-12
+
+          ### Provider system and PostgreSQL/Drizzle
+
+          - Added a central provider registry and protocol-specific adapters.
+          - Added deterministic Base URL normalization, redirect-aware SSRF protection, bounded model discovery, inference probes, streaming, tool calls, and structured bilingual diagnostics.
+          - Added draft/testing/ready/error provider lifecycle states; only inference-verified providers can serve chat or Telegram.
+          - Replaced runtime SQLite/dual-database behavior with PostgreSQL/Supabase and Drizzle ORM.
+          - Added tracked, additive migrations and typed repositories for authentication, providers, integrations, chats, messages, attachments, agent runs, steps, tool executions, workspaces, files metadata, tickets, and audit logs.
+          - Removed the production dependency on `better-sqlite3` and moved CI integration tests to PostgreSQL 16.
+
+          """
+          if '## [2.0.0]' not in change_text:
+              first_release = change_text.find('## [')
+              if first_release >= 0:
+                  change_text = change_text[:first_release] + release + change_text[first_release:]
+              else:
+                  change_text += '\n' + release
+              changelog.write_text(change_text)
+          PY
+
+          rm -f server/src/provider-diagnostics.ts server/src/provider-diagnostics.test.ts
+          rm -rf server/src/migrations .audit .bootstrap
+          find .github/workflows -maxdepth 1 -type f ! -name ci.yml ! -name finalize-phase12-repository.yml -delete
+          rm -f .github/workflows/finalize-phase12-repository.yml
+
+      - name: Commit finalized repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'Repository already finalized.'
+            exit 0
+          fi
+          git commit -m 'chore: finalize provider and Drizzle phase 1-2 repository'
+          git push origin HEAD:${{ github.head_ref }}
