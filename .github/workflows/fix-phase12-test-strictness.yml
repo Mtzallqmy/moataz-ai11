@@ -1,0 +1,49 @@
+name: Fix phase 1-2 test strictness
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.head_ref == 'feat/providers-drizzle-phase12'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          db_test = Path('server/src/database/phase12.integration.test.ts')
+          if db_test.exists():
+              text = db_test.read_text()
+              text = text.replace(
+                  "    await isolated.end();\n    expect(isolated.ended).toBe(true);",
+                  "    await isolated.end();\n    await expect(isolated.query('SELECT 1')).rejects.toBeDefined();"
+              )
+              db_test.write_text(text)
+
+          legacy = Path('server/src/database/legacy-migration.integration.test.ts')
+          if legacy.exists():
+              text = legacy.read_text()
+              text = text.replace('let legacyPool: Pool;', 'let legacyPool: Pool | undefined;')
+              text = text.replace('  legacyPool = new Pool(', '  legacyPool = new Pool(')
+              text = text.replace('  await legacyPool.query(`', '  await legacyPool!.query(`')
+              text = text.replace('  await legacyPool?.end();', '  await legacyPool?.end();')
+              text = text.replace('    const db = drizzle(legacyPool);', "    if (!legacyPool) throw new Error('legacy_pool_not_initialized');\n    const db = drizzle(legacyPool);")
+              text = text.replace("(await legacyPool.query(`SELECT count(*)::int AS count FROM providers WHERE id='p1'`)).rows[0].count", "(await legacyPool.query<{ count: number }>(`SELECT count(*)::int AS count FROM providers WHERE id='p1'`)).rows[0]!.count")
+              legacy.write_text(text)
+          PY
+          rm -f .github/workflows/fix-phase12-test-strictness.yml
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: make PostgreSQL phase 1-2 tests strictly typed'
+          git push origin HEAD:${{ github.head_ref }}
