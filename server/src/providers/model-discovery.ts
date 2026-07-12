@@ -1,19 +1,23 @@
-import crypto from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { config } from '../config.js';
 import { adapterForProtocol } from './adapters/index.js';
 import { getProviderDefinition } from './registry.js';
 import type { ModelDiscoveryResult, ProviderRuntimeConfig } from './types.js';
 
-type CacheEntry = { expiresAt: number; result: ModelDiscoveryResult };
+type CacheEntry = {
+  expiresAt: number;
+  result: ModelDiscoveryResult;
+};
+
 const cache = new Map<string, CacheEntry>();
-const inflight = new Map<string, Promise<ModelDiscoveryResult>>();
+const maxCacheEntries = 200;
 
 function cacheKey(input: ProviderRuntimeConfig): string {
-  const keyFingerprint = crypto.createHash('sha256').update(input.apiKey).digest('hex').slice(0, 16);
-  return [input.providerType, input.normalizedBaseUrl ?? input.rawBaseUrl ?? '', keyFingerprint].join('|');
+  const secretHash = createHash('sha256').update(input.apiKey).digest('hex').slice(0, 24);
+  return [input.providerType, input.normalizedBaseUrl ?? input.rawBaseUrl ?? '', secretHash].join('|');
 }
 
-function clone(result: ModelDiscoveryResult, cached: boolean): ModelDiscoveryResult {
+function cloneResult(result: ModelDiscoveryResult, cached: boolean): ModelDiscoveryResult {
   return {
     ...result,
     cached,
@@ -25,36 +29,52 @@ function clone(result: ModelDiscoveryResult, cached: boolean): ModelDiscoveryRes
   };
 }
 
-export async function discoverProviderModels(
-  input: ProviderRuntimeConfig,
-  options: { signal?: AbortSignal; force?: boolean } = {}
-): Promise<ModelDiscoveryResult> {
-  const definition = getProviderDefinition(input.providerType);
-  const adapter = adapterForProtocol(definition.protocol);
-  const normalized = adapter.normalizeConfig(input);
-  const key = cacheKey(normalized);
-  const now = Date.now();
-  const existing = cache.get(key);
-  if (!options.force && existing && existing.expiresAt > now) return clone(existing.result, true);
-  if (!options.force) {
-    const active = inflight.get(key);
-    if (active) return clone(await active, false);
+function pruneCache(now: number): void {
+  for (const [key, value] of cache) {
+    if (value.expiresAt <= now) cache.delete(key);
   }
-  const task = adapter.discoverModels(normalized, options.signal).then((result) => {
-    const clean = clone(result, false);
-    cache.set(key, { expiresAt: Date.now() + config.providerModelCacheTtlMs, result: clean });
-    return clean;
-  }).finally(() => inflight.delete(key));
-  inflight.set(key, task);
-  return clone(await task, false);
+  while (cache.size >= maxCacheEntries) {
+    const oldest = cache.keys().next().value as string | undefined;
+    if (!oldest) break;
+    cache.delete(oldest);
+  }
 }
 
-export function invalidateProviderModelCache(input?: Pick<ProviderRuntimeConfig, 'providerType' | 'apiKey' | 'rawBaseUrl' | 'normalizedBaseUrl'>): void {
-  if (!input) {
-    cache.clear();
-    inflight.clear();
-    return;
+export async function discoverProviderModels(
+  input: ProviderRuntimeConfig,
+  options: { signal?: AbortSignal | undefined; force?: boolean | undefined } = {}
+): Promise<ModelDiscoveryResult> {
+  const definition = getProviderDefinition(input.providerType);
+  if (definition.capabilities.modelDiscovery === false || definition.endpoints.models === null) {
+    return {
+      status: 'unsupported',
+      models: [],
+      testedEndpoints: [],
+      latencyMs: 0,
+      cached: false,
+      message: 'This provider does not expose model discovery through the configured adapter.'
+    };
   }
-  const prefix = `${input.providerType}|${input.normalizedBaseUrl ?? input.rawBaseUrl ?? ''}|`;
-  for (const key of cache.keys()) if (key.startsWith(prefix)) cache.delete(key);
+
+  const normalized = adapterForProtocol(definition.protocol).normalizeConfig(input);
+  const key = cacheKey(normalized);
+  const now = Date.now();
+  pruneCache(now);
+  if (!options.force) {
+    const existing = cache.get(key);
+    if (existing && existing.expiresAt > now) return cloneResult(existing.result, true);
+  }
+
+  const result = await adapterForProtocol(definition.protocol).discoverModels(normalized, options.signal);
+  if (result.status === 'supported') {
+    cache.set(key, {
+      expiresAt: now + config.providerModelCacheTtlMs,
+      result: cloneResult(result, false)
+    });
+  }
+  return cloneResult(result, false);
+}
+
+export function clearProviderModelCache(): void {
+  cache.clear();
 }
