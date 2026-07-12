@@ -19,13 +19,21 @@ function stripKnownTerminalPath(pathname: string): string {
   return current;
 }
 
-function parseAbsoluteHttpUrl(raw: string): URL {
+function withDefaultProtocol(raw: string): string {
   const trimmed = raw.trim();
+  const looksLikeHostPort = /^(?:localhost|\[[^\]]+\]|(?:[a-z0-9-]+\.)*[a-z0-9-]+):\d+(?:[/?#]|$)/i.test(trimmed);
+  const hasExplicitScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) && !looksLikeHostPort;
+  if (hasExplicitScheme) return trimmed;
+  return `https://${trimmed.replace(/^\/\//, '')}`;
+}
+
+function parseAbsoluteHttpUrl(raw: string): URL {
+  const candidate = withDefaultProtocol(raw);
   let url: URL;
   try {
-    url = new URL(trimmed);
+    url = new URL(candidate);
   } catch {
-    throw new AppError('provider_base_url_invalid', 422, 'The provider Base URL must be an absolute HTTP or HTTPS URL.', {
+    throw new AppError('provider_base_url_invalid', 422, 'The provider Base URL must be a valid HTTP or HTTPS URL.', {
       stage: 'invalid_request', retryable: false
     });
   }
