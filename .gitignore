@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+data/*.db
+data/*.db-*
+workspace/*
+!workspace/.gitkeep
+*.log
+npm-debug.log*
+.DS_Store
+.vscode/
+.idea/
+reports/runtime/
