@@ -1,0 +1,108 @@
+name: Verify production main
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/verify-production-main.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: replace-production-repository
+  cancel-in-progress: false
+
+jobs:
+  verify-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Verify expected production structure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f package.json
+          test -f package-lock.json
+          test -f Dockerfile
+          test -f railway.json
+          test -f server/src/index.ts
+          test -f server/src/config.ts
+          test -f client/src/main.tsx
+          test -f scripts/ensure-runtime-dirs.mjs
+          test ! -e .bootstrap
+          test ! -e .github/workflows/apply-phase2-deps.yml
+          test ! -e drizzle.config.ts
+          test ! -e server/src/db/schema.ts
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        env:
+          NODE_ENV: development
+          NPM_CONFIG_PRODUCTION: "false"
+        run: npm ci --include=dev --no-audit --no-fund
+
+      - name: Prepare runtime directories
+        run: node scripts/ensure-runtime-dirs.mjs
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Build production Docker image
+        run: docker build -t moataz-ai:production .
+
+      - name: Write verification marker and remove temporary workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > PRODUCTION_READY.md <<'EOF'
+          # Production Ready
+
+          The `main` branch passed a clean Node.js 20 validation on GitHub Actions:
+
+          - dependency installation with `npm ci`
+          - ESLint
+          - TypeScript typecheck
+          - complete automated test suite
+          - frontend and backend production build
+          - production Docker image build
+
+          Railway readiness is checked through `/api/ready`; runtime deployment still requires the environment variables documented in `DEPLOYMENT.md` and `railway.env.example`.
+          EOF
+
+          rm -rf node_modules dist data workspace
+          rm -f .github/workflows/verify-production-main.yml
+          rm -f .github/workflows/finalize-production-upload.yml
+          rm -f .github/workflows/replace-repository.yml
+          rm -f .github/workflows/replace-and-promote.yml
+          rm -f .github/workflows/promote-production.yml
+          rm -f .github/workflows/apply-phase2-deps.yml
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "chore: record successful production validation"
+          git push origin HEAD:main
