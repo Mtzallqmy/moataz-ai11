@@ -243,7 +243,7 @@ ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS summary jsonb NOT NULL DEFAULT '
 ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP;
 UPDATE agent_runs SET
   user_id = COALESCE(agent_runs.user_id, chats.user_id),
-  finished_at = COALESCE(agent_runs.finished_at, agent_runs.completed_at),
+  finished_at = COALESCE(agent_runs.finished_at, agent_runs.completed_at, CASE WHEN agent_runs.status IN ('completed','failed','cancelled') THEN agent_runs.created_at END),
   summary = CASE WHEN summary = '{}'::jsonb THEN moataz_safe_jsonb(log) ELSE summary END
 FROM chats WHERE chats.id = agent_runs.chat_id;
 ALTER TABLE agent_runs ALTER COLUMN user_id SET NOT NULL;
@@ -360,6 +360,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS agent_runs_one_running_unique ON agent_runs(ch
 CREATE INDEX IF NOT EXISTS agent_steps_run_status_idx ON agent_steps(agent_run_id, status);
 CREATE INDEX IF NOT EXISTS tool_executions_run_step_idx ON tool_executions(agent_run_id, agent_step_id);
 CREATE INDEX IF NOT EXISTS refresh_tokens_user_expiry_idx ON refresh_tokens(user_id, expires_at);
+CREATE UNIQUE INDEX IF NOT EXISTS websocket_tickets_hash_unique ON websocket_tickets(token_hash);
 CREATE INDEX IF NOT EXISTS websocket_tickets_expiry_idx ON websocket_tickets(expires_at);
 CREATE INDEX IF NOT EXISTS audit_logs_user_created_idx ON audit_logs(user_id, created_at);
 CREATE INDEX IF NOT EXISTS audit_logs_resource_idx ON audit_logs(resource_type, resource_id);
