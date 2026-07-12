@@ -18,8 +18,23 @@ function concreteModel(value: string): boolean {
   return Boolean(model) && !/^(auto|default|free|latest)$/i.test(model);
 }
 
+function enforceBaseUrlPolicy(input: ProviderRuntimeConfig): void {
+  const definition = getProviderDefinition(input.providerType);
+  const supplied = input.rawBaseUrl ?? input.normalizedBaseUrl;
+  if (!supplied || definition.allowsCustomBaseUrl || !definition.defaultBaseUrl) return;
+  const suppliedUrl = resolveProviderUrls(definition.id, supplied).normalizedBaseUrl;
+  const defaultUrl = resolveProviderUrls(definition.id, definition.defaultBaseUrl).normalizedBaseUrl;
+  if (suppliedUrl !== defaultUrl) {
+    throw new AppError('provider_custom_base_url_forbidden', 422, 'This native provider adapter does not accept a custom Base URL.', {
+      providerType: definition.id,
+      retryable: false
+    });
+  }
+}
+
 export function normalizeProviderConfig(input: ProviderRuntimeConfig): ProviderRuntimeConfig {
   const definition = getProviderDefinition(input.providerType);
+  enforceBaseUrlPolicy(input);
   const adapter = adapterForProtocol(definition.protocol);
   return adapter.normalizeConfig({
     ...input,
