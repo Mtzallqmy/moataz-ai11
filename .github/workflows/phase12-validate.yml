@@ -1,0 +1,170 @@
+name: Phase 1-2 final validation
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.head_ref == 'feat/providers-drizzle-phase12' && !contains(github.event.pull_request.head.sha, '0000000')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: moataz_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d moataz_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/moataz_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/moataz_test
+      DATABASE_SSL_MODE: disable
+      DATABASE_POOL_MAX: "5"
+      DATABASE_IDLE_TIMEOUT_MS: "10000"
+      DATABASE_CONNECTION_TIMEOUT_MS: "5000"
+      DATABASE_STATEMENT_TIMEOUT_MS: "10000"
+      DATABASE_STARTUP_RETRIES: "3"
+      DATABASE_MIGRATIONS_ON_STARTUP: "true"
+      JWT_SECRET: phase12-validation-jwt-secret-at-least-32-characters
+      ENCRYPTION_KEY: phase12-validation-encryption-key-at-least-32-characters
+      DEFAULT_ADMIN_EMAIL: admin@example.com
+      DEFAULT_ADMIN_PASSWORD: Phase12Validation123!
+      APP_URL: http://localhost:8080
+      CORS_ORIGIN: http://localhost:8080
+      TRUST_PROXY: "1"
+      WORKSPACE_DIR: ./workspace/phase12-validation
+      ALLOW_SHELL: "false"
+      SHELL_SANDBOX_MODE: disabled
+      TELEGRAM_POLLING: "false"
+      ALLOW_PRIVATE_PROVIDER_URLS: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://registry.npmjs.org
+
+      - name: Ensure only phases 1-2 source remains
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e server/src/db.ts
+          test ! -d server/src/migrations
+          test ! -e server/src/routes/providers.phase12.ts
+          test ! -e server/src/providers/service.phase12.ts
+          test ! -e server/src/providers/registry.phase12.ts
+          test ! -e server/src/providers/base-url.phase12.ts
+          test ! -e server/src/providers/model-discovery.phase12.ts
+          test ! -e server/src/providers/adapters/gemini.phase12.ts
+          if grep -R "better-sqlite3\|from './db\.js'\|from '../db\.js'" package.json package-lock.json server client Dockerfile --include='*.ts' --include='*.tsx' --include='*.json' --include='Dockerfile'; then
+            echo 'Legacy SQLite or DB facade references remain.'
+            exit 1
+          fi
+
+      - name: Install Node.js 20 dependencies
+        run: npm ci --include=dev --no-audit --no-fund
+
+      - name: Reset PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d moataz_test -v ON_ERROR_STOP=1 <<'SQL'
+          DROP SCHEMA IF EXISTS drizzle CASCADE;
+          DROP SCHEMA public CASCADE;
+          CREATE SCHEMA public;
+          GRANT ALL ON SCHEMA public TO postgres;
+          GRANT ALL ON SCHEMA public TO public;
+          SQL
+
+      - name: Migrate empty database twice and verify
+        run: |
+          npm run db:migrate
+          npm run db:check
+          npm run db:migrate
+          npm run db:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Strict TypeScript without skipped library checking
+        run: |
+          node -e "const c=require('./server/tsconfig.json'); if(c.compilerOptions.skipLibCheck) process.exit(1); if(!c.compilerOptions.strict) process.exit(1)"
+          npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: PostgreSQL integration and legacy migration tests
+        run: npm run test:integration
+
+      - name: Frontend and backend production build
+        run: npm run build
+
+      - name: Compiled production migration command
+        run: |
+          npm run db:migrate:prod
+          npm run db:check:prod
+
+      - name: Docker production image
+        run: docker build --progress=plain --tag moataz-ai:phase12 .
+
+      - name: Final source cleanup and validation record
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .audit .bootstrap
+          find .github/workflows -maxdepth 1 -type f ! -name ci.yml ! -name phase12-validate.yml ! -name merge-phase12-after-validation.yml -delete
+          cat > docs/PHASE12_VALIDATION.md <<EOF
+          # Phase 1-2 Validation
+
+          Validated on GitHub Actions with Node.js 20 and PostgreSQL 16.
+
+          Validated source commit before the evidence commit: \`${GITHUB_SHA}\`.
+
+          | Command/check | Result |
+          |---|---|
+          | npm ci --include=dev | Passed |
+          | npm run db:migrate on empty PostgreSQL | Passed |
+          | repeated npm run db:migrate | Passed |
+          | npm run db:check | Passed |
+          | npm run lint | Passed |
+          | npm run typecheck | Passed |
+          | npm test | Passed |
+          | npm run test:integration | Passed |
+          | npm run build | Passed |
+          | npm run db:migrate:prod | Passed |
+          | npm run db:check:prod | Passed |
+          | docker build | Passed |
+
+          Provider tests use local mock HTTP servers and do not contact live AI services. This validation covers only the provider-system and PostgreSQL/Drizzle phases.
+          EOF
+          rm -f .github/workflows/phase12-validate.yml
+
+      - name: Commit validation evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore: record successful phase 1-2 validation'
+          git push origin HEAD:${{ github.head_ref }}
