@@ -152,3 +152,9 @@ npm run db:seed
 ```
 
 For production, run `npm run db:migrate` as a release/pre-deploy command, or explicitly set `DATABASE_MIGRATIONS_ON_STARTUP=true` for a single application replica. Do not allow several replicas to perform first-time operational setup simultaneously unless the deployment process serializes migrations.
+
+## Removed obsolete SQLite compatibility tests
+
+The following tests targeted the deleted dual SQLite/raw-SQL helper and were replaced by the PostgreSQL/Drizzle unit and integration suites:
+
+- `server/src/app.integration.test.ts`
