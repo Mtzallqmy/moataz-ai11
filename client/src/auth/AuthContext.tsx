@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { apiRequest, ApiError, type ApiRequestOptions } from '../lib/api';
+import { apiRequest, apiResponse, ApiError, type ApiRequestOptions } from '../lib/api';
 
 export type SessionUser = { id: string; email: string; name: string; role: 'admin' | 'user' };
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
@@ -14,6 +14,7 @@ type AuthContextValue = {
   login: (input: LoginInput) => Promise<void>;
   logout: () => Promise<void>;
   request: <T>(path: string, options?: RequestInit) => Promise<T>;
+  streamRequest: (path: string, options?: RequestInit) => Promise<Response>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -150,7 +151,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [clearSession, loadMe, refresh, rememberUser, status]);
 
-  return <AuthContext.Provider value={{ status, user, login, logout, request }}>{children}</AuthContext.Provider>;
+  const streamRequest = useCallback(async (path: string, options: RequestInit = {}): Promise<Response> => {
+    const execute = (token: string) => apiResponse(path, { ...options, accessToken: token } as ApiRequestOptions);
+    try {
+      const token = accessToken.current || await refresh();
+      return await execute(token);
+    } catch (error) {
+      if (!isSessionUnauthorized(error)) throw error;
+      try {
+        const token = await refresh();
+        return await execute(token);
+      } catch (refreshError) {
+        if (isSessionUnauthorized(refreshError)) clearSession();
+        throw refreshError;
+      }
+    }
+  }, [clearSession, refresh]);
+
+  return <AuthContext.Provider value={{ status, user, login, logout, request, streamRequest }}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

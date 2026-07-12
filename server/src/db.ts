@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import Database from 'better-sqlite3';
 import { Pool, type PoolClient, type QueryResult } from 'pg';
 import bcrypt from 'bcryptjs';
 import { config } from './config.js';
@@ -12,7 +11,24 @@ export type SqlParams = readonly unknown[];
 export type SqlOperation = { sql: string; params?: SqlParams };
 
 const isPostgres = /^postgres(?:ql)?:/i.test(config.databaseUrl);
-let sqliteDb: Database.Database | undefined;
+type SqliteStatement = {
+  all: (...params: unknown[]) => unknown[];
+  get: (...params: unknown[]) => unknown;
+  run: (...params: unknown[]) => unknown;
+};
+
+type SqliteDatabase = {
+  prepare: (sql: string) => SqliteStatement;
+  close: () => void;
+  open?: boolean;
+  pragma?: (value: string) => unknown;
+  exec?: (sql: string) => unknown;
+  transaction?: <T extends (...args: never[]) => unknown>(callback: T) => T;
+};
+
+type SqliteConstructor = new (filename: string) => SqliteDatabase;
+
+let sqliteDb: SqliteDatabase | undefined;
 let pgPool: Pool | undefined;
 let migrated = false;
 
@@ -20,30 +36,71 @@ const dbPath = config.databaseUrl.startsWith('file:')
   ? config.databaseUrl.slice('file:'.length)
   : './data/moataz.db';
 
-function postgresSsl(): false | { rejectUnauthorized: boolean } | undefined {
+function postgresSsl(): false | { rejectUnauthorized: boolean; ca?: string } | undefined {
   if (!isPostgres || config.databaseSslMode === 'disable') return undefined;
   if (config.databaseSslMode === 'require') return { rejectUnauthorized: false };
-  return { rejectUnauthorized: true };
+  const caValue = config.databaseSslCa.trim();
+  if (!caValue) {
+    throw new Error('DATABASE_SSL_CA is required when DATABASE_SSL_MODE=verify-full');
+  }
+  const ca = caValue.includes('BEGIN CERTIFICATE') ? caValue : fs.readFileSync(caValue, 'utf8');
+  return { rejectUnauthorized: true, ca };
 }
 
 if (isPostgres) {
   pgPool = new Pool({
     connectionString: config.databaseUrl,
     ssl: postgresSsl(),
-    max: 10,
+    max: config.databasePoolMax,
     min: 0,
-    connectionTimeoutMillis: 10_000,
-    idleTimeoutMillis: 30_000,
-    statement_timeout: 30_000,
+    connectionTimeoutMillis: config.databaseConnectionTimeoutMs,
+    idleTimeoutMillis: config.databaseIdleTimeoutMs,
+    statement_timeout: config.databaseStatementTimeoutMs,
     application_name: 'moataz-ai'
   });
   pgPool.on('error', (error) => logger.error('database_pool_error', { error: error.message }));
 } else {
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-  sqliteDb = new Database(dbPath);
-  sqliteDb.pragma('journal_mode = WAL');
-  sqliteDb.pragma('foreign_keys = ON');
-  sqliteDb.pragma('busy_timeout = 5000');
+  let Database: SqliteConstructor | undefined;
+  let nativeError: unknown;
+  try {
+    const module = await import('better-sqlite3');
+    Database = module.default as unknown as SqliteConstructor;
+  } catch (error) {
+    nativeError = error;
+  }
+
+  if (Database) {
+    try {
+      sqliteDb = new Database(dbPath);
+      sqliteDb.pragma?.('journal_mode = WAL');
+      sqliteDb.pragma?.('foreign_keys = ON');
+      sqliteDb.pragma?.('busy_timeout = 5000');
+    } catch (error) {
+      nativeError = error;
+      sqliteDb = undefined;
+      Database = undefined;
+    }
+  }
+
+  if (!sqliteDb && !config.isProduction) {
+    // Node 22 provides an experimental built-in SQLite implementation. It is
+    // used only as a local/test fallback when the optional native binding is
+    // unavailable; production deployments remain PostgreSQL-only.
+    try {
+      const builtinLoader = (process as NodeJS.Process & { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule;
+      if (!builtinLoader) throw new Error('Node built-in module loader is unavailable');
+      const builtin = builtinLoader('node:sqlite') as { DatabaseSync?: SqliteConstructor } | undefined;
+      if (!builtin?.DatabaseSync) throw new Error('node:sqlite is unavailable in this Node.js version');
+      sqliteDb = new builtin.DatabaseSync(dbPath);
+      sqliteDb.exec?.('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');
+      logger.warn('sqlite_builtin_fallback_enabled', { nodeVersion: process.versions.node });
+    } catch (builtinError) {
+      throw new Error(`SQLite support is unavailable. Install better-sqlite3 or use PostgreSQL. Native error: ${nativeError instanceof Error ? nativeError.message : String(nativeError)}; built-in error: ${builtinError instanceof Error ? builtinError.message : String(builtinError)}`);
+    }
+  } else if (!sqliteDb) {
+    throw new Error(`SQLite support is unavailable in production. Configure PostgreSQL DATABASE_URL. Native error: ${nativeError instanceof Error ? nativeError.message : String(nativeError)}`);
+  }
 }
 
 function transform(sql: string): string {
@@ -93,12 +150,34 @@ export async function transaction(operations: readonly SqlOperation[]): Promise<
     return;
   }
 
-  const execute = sqliteDb!.transaction((ops: readonly SqlOperation[]) => {
-    for (const operation of ops) {
+  if (sqliteDb!.transaction) {
+    const execute = sqliteDb!.transaction((ops: readonly SqlOperation[]) => {
+      for (const operation of ops) {
+        sqliteDb!.prepare(operation.sql).run(...(operation.params ?? []));
+      }
+    });
+    execute(operations as never);
+    return;
+  }
+
+  sqliteDb!.exec?.('BEGIN IMMEDIATE');
+  try {
+    for (const operation of operations) {
       sqliteDb!.prepare(operation.sql).run(...(operation.params ?? []));
     }
-  });
-  execute(operations);
+    sqliteDb!.exec?.('COMMIT');
+  } catch (error) {
+    sqliteDb!.exec?.('ROLLBACK');
+    throw error;
+  }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  const code = typeof (error as NodeJS.ErrnoException | undefined)?.code === 'string'
+    ? (error as NodeJS.ErrnoException).code
+    : '';
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return code === '23505' || message.includes('unique constraint') || message.includes('duplicate key');
 }
 
 async function addColumn(table: string, definition: string): Promise<void> {
@@ -132,16 +211,51 @@ const baseStatements = [
     user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     type TEXT NOT NULL,
+    protocol TEXT NOT NULL DEFAULT 'openai-compatible',
     base_url TEXT,
     api_key_enc TEXT NOT NULL,
+    key_last_four TEXT,
+    custom_headers_enc TEXT,
+    credential_version INTEGER NOT NULL DEFAULT 1,
+    streaming_enabled INTEGER NOT NULL DEFAULT 1,
     default_model TEXT NOT NULL,
     validation_status TEXT NOT NULL DEFAULT 'untested',
     validation_error_code TEXT,
+    last_error_message TEXT,
     validated_at TIMESTAMP,
     is_active INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  )`,
+  `CREATE TABLE IF NOT EXISTS provider_models (
+    provider_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    display_name TEXT,
+    capabilities TEXT,
+    discovered_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_verified_at TIMESTAMP,
+    PRIMARY KEY (provider_id, model_id),
+    FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
+  )`,
+  `CREATE TABLE IF NOT EXISTS provider_request_logs (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    protocol TEXT NOT NULL,
+    base_url_host TEXT,
+    endpoint_path TEXT,
+    model TEXT,
+    stream INTEGER NOT NULL DEFAULT 0,
+    status_code INTEGER,
+    provider_error_type TEXT,
+    latency_ms INTEGER,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    request_id TEXT,
+    upstream_request_id TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (provider_id) REFERENCES providers(id) ON DELETE CASCADE
   )`,
   `CREATE TABLE IF NOT EXISTS chats (
     id TEXT PRIMARY KEY,
@@ -161,6 +275,7 @@ const baseStatements = [
     user_id TEXT,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'completed',
     tool_calls TEXT,
     idempotency_key TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -241,6 +356,9 @@ const baseStatements = [
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   )`,
   'CREATE INDEX IF NOT EXISTS idx_providers_user ON providers(user_id, is_active)',
+  'CREATE INDEX IF NOT EXISTS idx_provider_models_provider_discovered ON provider_models(provider_id, discovered_at DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_provider_request_logs_user_created ON provider_request_logs(user_id, created_at DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_provider_request_logs_provider_created ON provider_request_logs(provider_id, created_at DESC)',
   'CREATE INDEX IF NOT EXISTS idx_chats_user_updated ON chats(user_id, updated_at DESC)',
   'CREATE INDEX IF NOT EXISTS idx_messages_chat_created ON messages(chat_id, created_at ASC)',
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_idempotency ON messages(chat_id, idempotency_key, role) WHERE idempotency_key IS NOT NULL',
@@ -254,7 +372,32 @@ const baseStatements = [
   'CREATE INDEX IF NOT EXISTS idx_websocket_tickets_expiry ON websocket_tickets(expires_at)'
 ] as const;
 
+async function connectWithRetry(): Promise<void> {
+  if (!isPostgres) return;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= config.databaseConnectAttempts; attempt += 1) {
+    try {
+      await pgPool!.query('SELECT 1');
+      if (attempt > 1) logger.info('database_connected_after_retry', { attempt });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt >= config.databaseConnectAttempts) break;
+      const delayMs = Math.min(250 * 2 ** (attempt - 1), 4_000);
+      logger.warn('database_connect_retry', {
+        attempt,
+        delayMs,
+        code: typeof (error as NodeJS.ErrnoException).code === 'string' ? (error as NodeJS.ErrnoException).code : 'unknown'
+      });
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Database connection failed');
+}
+
 export async function migrate(): Promise<void> {
+  if (migrated) return;
+  await connectWithRetry();
   for (const statement of baseStatements) await run(statement);
 
   await addColumn('users', 'is_active INTEGER NOT NULL DEFAULT 1');
@@ -262,12 +405,19 @@ export async function migrate(): Promise<void> {
   await addColumn('users', 'last_login_at TIMESTAMP');
   await addColumn('messages', 'user_id TEXT');
   await addColumn('messages', 'idempotency_key TEXT');
+  await addColumn('messages', "status TEXT NOT NULL DEFAULT 'completed'");
   await addColumn('agent_runs', 'user_id TEXT');
   await addColumn('agent_runs', 'error_code TEXT');
   await addColumn('agent_runs', 'started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP');
   await addColumn('agent_runs', 'completed_at TIMESTAMP');
+  await addColumn('providers', "protocol TEXT NOT NULL DEFAULT 'openai-compatible'");
+  await addColumn('providers', 'key_last_four TEXT');
+  await addColumn('providers', 'custom_headers_enc TEXT');
+  await addColumn('providers', 'credential_version INTEGER NOT NULL DEFAULT 1');
+  await addColumn('providers', 'streaming_enabled INTEGER NOT NULL DEFAULT 1');
   await addColumn('providers', "validation_status TEXT NOT NULL DEFAULT 'untested'");
   await addColumn('providers', 'validation_error_code TEXT');
+  await addColumn('providers', 'last_error_message TEXT');
   await addColumn('providers', 'validated_at TIMESTAMP');
   await addColumn('providers', 'updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP');
   await addColumn('integrations', "validation_status TEXT NOT NULL DEFAULT 'untested'");
@@ -275,20 +425,39 @@ export async function migrate(): Promise<void> {
   await addColumn('integrations', 'validated_at TIMESTAMP');
   await addColumn('integrations', 'updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP');
 
-  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.2.0', 'phase1-1.2.0']);
-  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.3.0', 'phase1-1.3.0']);
-  await run('INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)', ['phase1-1.5.0', 'phase1-1.5.0']);
+  // Preserve the protocol of existing provider rows created before protocol was persisted.
+  await run("UPDATE providers SET protocol = 'openai' WHERE type = 'openai'");
+  await run("UPDATE providers SET protocol = 'anthropic' WHERE type = 'anthropic'");
+  await run("UPDATE providers SET protocol = 'gemini' WHERE type = 'gemini'");
+  await run("UPDATE providers SET protocol = 'openai-compatible' WHERE type NOT IN ('openai', 'anthropic', 'gemini') OR protocol IS NULL OR protocol = ''");
+  await run("UPDATE providers SET default_model = '' WHERE LOWER(TRIM(default_model)) IN ('auto', 'default', 'free', 'latest')");
+
+  for (const version of ['phase1-1.2.0', 'phase1-1.3.0', 'phase1-1.5.0', 'production-hardening-1.5.1', 'provider-runtime-1.6.0']) {
+    try {
+      await run(
+        'INSERT INTO schema_migrations (version) SELECT ? WHERE NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = ?)',
+        [version, version]
+      );
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+    }
+  }
 
   const existing = await get<{ id: string }>('SELECT id FROM users WHERE email = ?', [config.defaultAdminEmail]);
   if (!existing) {
     const id = cryptoId();
     const passwordHash = await bcrypt.hash(config.defaultAdminPassword, 12);
-    await run(
-      'INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, ?)',
-      [id, config.defaultAdminEmail, passwordHash, 'Moataz Admin', 'admin', 1]
-    );
+    try {
+      await run(
+        'INSERT INTO users (id, email, password_hash, name, role, is_active) VALUES (?, ?, ?, ?, ?, ?)',
+        [id, config.defaultAdminEmail, passwordHash, 'Moataz Admin', 'admin', 1]
+      );
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+    }
   }
   migrated = true;
+  logger.info('database_migrations_ready', { databaseKind: config.databaseKind });
 }
 
 export function cryptoId(): string {
@@ -315,6 +484,11 @@ export async function getMigrationStatus(): Promise<{ ready: boolean; versions: 
 }
 
 export async function close(): Promise<void> {
-  if (pgPool) await pgPool.end();
+  if (pgPool) {
+    await pgPool.end();
+    pgPool = undefined;
+  }
   if (sqliteDb?.open) sqliteDb.close();
+  sqliteDb = undefined;
+  migrated = false;
 }

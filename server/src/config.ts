@@ -54,8 +54,15 @@ const envSchema = z.object({
   ENCRYPTION_KEY: optionalString,
   DATABASE_URL: optionalTrimmedString,
   DATABASE_SSL_MODE: z.enum(['disable', 'require', 'verify-full']).default('disable'),
+  DATABASE_SSL_CA: optionalTrimmedString,
+  DATABASE_POOL_MAX: positiveInt(10),
+  DATABASE_CONNECTION_TIMEOUT_MS: positiveInt(10_000),
+  DATABASE_IDLE_TIMEOUT_MS: positiveInt(30_000),
+  DATABASE_STATEMENT_TIMEOUT_MS: positiveInt(30_000),
+  DATABASE_CONNECT_ATTEMPTS: positiveInt(5),
   WORKSPACE_DIR: z.string().min(1).default('./workspace'),
   ALLOW_SHELL: booleanString,
+  ALLOW_LOCAL_AI_PROVIDERS: booleanString,
   SHELL_SANDBOX_MODE: z.enum(['disabled', 'local-development']).default('disabled'),
   DEFAULT_ADMIN_EMAIL: optionalEmail,
   DEFAULT_ADMIN_PASSWORD: optionalString,
@@ -170,6 +177,10 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env) {
         : 'unconfigured' as const;
   if (databaseKind === 'unconfigured') addProblem(problems, 'DATABASE_URL', 'missing');
   if (databaseKind === 'unsupported') addProblem(problems, 'DATABASE_URL', 'unsupported_scheme');
+  if (isProduction && databaseKind === 'sqlite') addProblem(problems, 'DATABASE_URL', 'postgresql_required_in_production');
+  if (databaseKind === 'postgresql' && env.DATABASE_SSL_MODE === 'verify-full' && !env.DATABASE_SSL_CA) {
+    addProblem(problems, 'DATABASE_SSL_CA', 'required_for_verify_full');
+  }
 
   if (!defaultAdminEmail) addProblem(problems, 'DEFAULT_ADMIN_EMAIL', 'missing');
   if (!defaultAdminPassword) addProblem(problems, 'DEFAULT_ADMIN_PASSWORD', 'missing');
@@ -202,7 +213,6 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env) {
 
   const localShellRequested = env.ALLOW_SHELL && env.SHELL_SANDBOX_MODE === 'local-development';
   const shellAvailable = localShellRequested && !isProduction;
-  if (isRailway && databaseKind === 'sqlite') warnings.push('railway_ephemeral_sqlite_database');
 
   const requiredVariables = [...new Set(problems.map((problem) => problem.variable))];
 
@@ -228,8 +238,15 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env) {
     databaseUrl,
     databaseKind,
     databaseSslMode: env.DATABASE_SSL_MODE,
+    databaseSslCa: env.DATABASE_SSL_CA ?? '',
+    databasePoolMax: env.DATABASE_POOL_MAX,
+    databaseConnectionTimeoutMs: env.DATABASE_CONNECTION_TIMEOUT_MS,
+    databaseIdleTimeoutMs: env.DATABASE_IDLE_TIMEOUT_MS,
+    databaseStatementTimeoutMs: env.DATABASE_STATEMENT_TIMEOUT_MS,
+    databaseConnectAttempts: env.DATABASE_CONNECT_ATTEMPTS,
     workspaceDir: env.WORKSPACE_DIR,
     allowShellRequested: env.ALLOW_SHELL,
+    allowLocalAiProviders: env.ALLOW_LOCAL_AI_PROVIDERS && !isProduction,
     shellSandboxMode: env.SHELL_SANDBOX_MODE,
     shellAvailable,
     defaultAdminEmail,

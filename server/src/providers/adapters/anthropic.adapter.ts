@@ -1,9 +1,11 @@
+import { normalizeApiKey } from '../credentials.js';
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../../config.js';
 import { AppError } from '../../errors.js';
 import type { LLMToolCall, Msg } from '../../llm-types.js';
 import { normalizeProviderUrls } from '../base-url.js';
-import { diagnoseProviderError, readyDiagnostic } from '../diagnostics.js';
+import { diagnoseProviderError, diagnosticToAppError, readyDiagnostic } from '../diagnostics.js';
+import { normalizeCustomHeaders } from '../headers.js';
 import type {
   ModelDiscoveryResult,
   NormalizedProviderConfig,
@@ -11,18 +13,11 @@ import type {
   ProviderChatInput,
   ProviderChatResult,
   ProviderDefinition,
-  ProviderDiagnosticResult
+  ProviderDiagnosticResult,
+  ProviderStreamEvent
 } from '../types.js';
 
 type AnthropicImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
-
-function normalizeHeaders(definition: ProviderDefinition, input: Record<string, string> | undefined): Readonly<Record<string, string>> {
-  const allowed = new Set(definition.allowedCustomHeaders.map((value) => value.toLowerCase()));
-  return Object.freeze(Object.fromEntries(Object.entries(input ?? {}).flatMap(([name, value]) => {
-    const normalized = name.toLowerCase().trim();
-    return allowed.has(normalized) && value.trim() ? [[normalized, value.trim().slice(0, 2000)]] : [];
-  })));
-}
 
 function systemText(messages: readonly Msg[]): string {
   return messages.filter((message) => message.role === 'system').map((message) => message.content).join('\n\n') || 'You are Moataz AI.';
@@ -69,15 +64,22 @@ export class AnthropicAdapter implements ProviderAdapter {
     baseUrl?: string | null;
     selectedModel?: string | null;
     customHeaders?: Record<string, string>;
+    userId?: string;
+    providerId?: string;
+    credentialVersion?: number;
   }): NormalizedProviderConfig {
-    const apiKey = input.apiKey?.trim() ?? '';
+    const apiKey = normalizeApiKey(input.apiKey);
     if (!apiKey) throw new AppError('provider_api_key_required', 422, 'An Anthropic API key is required.');
     return {
       providerType: this.definition.id,
+      protocol: this.definition.protocol,
       definition: this.definition,
       apiKey,
       selectedModel: input.selectedModel?.trim() || null,
-      customHeaders: normalizeHeaders(this.definition, input.customHeaders),
+      customHeaders: normalizeCustomHeaders(this.definition, input.customHeaders),
+      credentialVersion: Math.max(1, input.credentialVersion ?? 1),
+      ...(input.userId ? { userId: input.userId } : {}),
+      ...(input.providerId ? { providerId: input.providerId } : {}),
       ...normalizeProviderUrls(this.definition, input.baseUrl)
     };
   }
@@ -101,10 +103,11 @@ export class AnthropicAdapter implements ProviderAdapter {
         model,
         messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
         temperature: 0,
-        maxTokens: 5
+        maxTokens: 64
       });
       return {
         ...readyDiagnostic({
+          stage: 'inference',
           testedEndpoint: configInput.resolvedChatUrl ?? undefined,
           testedModel: response.model,
           latencyMs: Date.now() - started,
@@ -115,6 +118,7 @@ export class AnthropicAdapter implements ProviderAdapter {
     } catch (error) {
       return {
         ...diagnoseProviderError(error, {
+          stage: 'inference',
           testedEndpoint: configInput.resolvedChatUrl ?? undefined,
           testedModel: model,
           latencyMs: Date.now() - started
@@ -167,13 +171,157 @@ export class AnthropicAdapter implements ProviderAdapter {
         ...(usage ? { usage } : {})
       };
     } catch (error) {
-      throw new AppError('provider_request_failed', 502, error instanceof Error ? error.message : 'Anthropic request failed.', {
-        providerError: error,
-        stage: 'unknown'
-      });
+      if (error instanceof AppError) throw error;
+      throw diagnosticToAppError(diagnoseProviderError(error, {
+        stage: 'inference',
+        testedEndpoint: input.config.resolvedChatUrl ?? undefined,
+        testedModel: input.model
+      }));
     } finally {
       clearTimeout(timer);
       input.signal?.removeEventListener('abort', onAbort);
     }
   }
+
+  async *streamChatCompletion(input: ProviderChatInput): AsyncIterable<ProviderStreamEvent> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error('provider_timeout')), config.llmTimeoutMs);
+    timer.unref();
+    const onAbort = () => controller.abort(input.signal?.reason);
+    if (input.signal) {
+      if (input.signal.aborted) onAbort();
+      else input.signal.addEventListener('abort', onAbort, { once: true });
+    }
+
+    const textParts: string[] = [];
+    const toolBuffers = new Map<number, { id: string; name: string; argumentsText: string; initial: Record<string, unknown> }>();
+    let requestId: string | undefined;
+    let responseModel = input.model;
+    let inputTokens: number | undefined;
+    let outputTokens: number | undefined;
+    let sawStop = false;
+
+    try {
+      const client = new Anthropic({
+        apiKey: input.config.apiKey,
+        ...(input.config.normalizedBaseUrl ? { baseURL: input.config.normalizedBaseUrl } : {}),
+        ...(Object.keys(input.config.customHeaders).length ? { defaultHeaders: input.config.customHeaders } : {})
+      });
+      const stream = client.messages.stream({
+        model: input.model,
+        max_tokens: input.maxTokens ?? 3000,
+        temperature: input.temperature ?? 0.3,
+        system: systemText(input.messages),
+        messages: anthropicMessages(input.messages),
+        ...(input.tools?.length ? {
+          tools: input.tools.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            input_schema: tool.parameters as unknown as Anthropic.Tool.InputSchema
+          }))
+        } : {})
+      }, { signal: controller.signal });
+
+      for await (const event of stream) {
+        if (event.type === 'message_start') {
+          requestId = event.message.id;
+          responseModel = event.message.model || input.model;
+          inputTokens = event.message.usage?.input_tokens;
+          continue;
+        }
+        if (event.type === 'content_block_start') {
+          if (event.content_block.type === 'text' && event.content_block.text) {
+            textParts.push(event.content_block.text);
+            yield { type: 'text_delta', text: event.content_block.text };
+          } else if (event.content_block.type === 'tool_use') {
+            toolBuffers.set(event.index, {
+              id: event.content_block.id,
+              name: event.content_block.name,
+              argumentsText: '',
+              initial: event.content_block.input !== null && typeof event.content_block.input === 'object' && !Array.isArray(event.content_block.input)
+                ? event.content_block.input as Record<string, unknown>
+                : {}
+            });
+            yield { type: 'tool_call_delta', index: event.index, id: event.content_block.id, name: event.content_block.name };
+          }
+          continue;
+        }
+        if (event.type === 'content_block_delta') {
+          if (event.delta.type === 'text_delta') {
+            if (event.delta.text) {
+              textParts.push(event.delta.text);
+              yield { type: 'text_delta', text: event.delta.text };
+            }
+          } else if (event.delta.type === 'input_json_delta') {
+            const current = toolBuffers.get(event.index);
+            if (current) {
+              current.argumentsText += event.delta.partial_json;
+              yield { type: 'tool_call_delta', index: event.index, id: current.id, name: current.name, argumentsDelta: event.delta.partial_json };
+            }
+          }
+          continue;
+        }
+        if (event.type === 'message_delta') {
+          outputTokens = event.usage?.output_tokens;
+          continue;
+        }
+        if (event.type === 'message_stop') sawStop = true;
+      }
+
+      if (!sawStop) {
+        throw new AppError('provider_stream_closed_early', 502, 'Anthropic closed the stream before message_stop.', {
+          stage: 'streaming', retryable: true
+        });
+      }
+      const toolCalls: LLMToolCall[] = [...toolBuffers.entries()].map(([index, value]) => {
+        let parsed: Record<string, unknown> = value.initial;
+        if (value.argumentsText.trim()) {
+          try {
+            const candidate = JSON.parse(value.argumentsText) as unknown;
+            if (candidate !== null && typeof candidate === 'object' && !Array.isArray(candidate)) parsed = candidate as Record<string, unknown>;
+          } catch {
+            throw new AppError('provider_invalid_tool_arguments', 502, `Anthropic returned malformed tool arguments for ${value.name}.`, {
+              stage: 'streaming', retryable: false, toolIndex: index
+            });
+          }
+        }
+        return { id: value.id, name: value.name, arguments: parsed };
+      });
+      for (const call of toolCalls) yield { type: 'tool_call', call };
+      const text = textParts.join('');
+      if (!text.trim() && toolCalls.length === 0) {
+        throw new AppError('provider_empty_response', 502, 'Anthropic returned an empty stream.', {
+          stage: 'streaming', retryable: false
+        });
+      }
+      const usage = inputTokens !== undefined || outputTokens !== undefined ? {
+        ...(inputTokens !== undefined ? { inputTokens } : {}),
+        ...(outputTokens !== undefined ? { outputTokens } : {}),
+        ...(inputTokens !== undefined && outputTokens !== undefined ? { totalTokens: inputTokens + outputTokens } : {})
+      } : undefined;
+      yield {
+        type: 'completed',
+        result: {
+          text,
+          toolCalls,
+          model: responseModel,
+          ...(requestId ? { requestId } : {}),
+          ...(usage ? { usage } : {})
+        }
+      };
+    } catch (error) {
+      yield {
+        type: 'error',
+        diagnostic: diagnoseProviderError(error, {
+          stage: 'streaming',
+          testedEndpoint: input.config.resolvedChatUrl ?? undefined,
+          testedModel: input.model
+        })
+      };
+    } finally {
+      clearTimeout(timer);
+      input.signal?.removeEventListener('abort', onAbort);
+    }
+  }
+
 }

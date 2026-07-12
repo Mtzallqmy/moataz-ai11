@@ -26,6 +26,7 @@ export type AgentStep = {
   toolCalls: LLMToolCall[];
   model: string;
   requestId?: string | undefined;
+  retryCount?: number | undefined;
   usage?: {
     inputTokens?: number | undefined;
     outputTokens?: number | undefined;

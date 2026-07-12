@@ -1,49 +1,79 @@
 export type ValidationStatus = 'untested' | 'verified' | 'failed' | string;
 
+export type ProviderProtocol = 'openai' | 'openai-compatible' | 'anthropic' | 'gemini';
+
 export type ProviderCatalogEntry = {
   id: string;
   label: string;
-  adapter: 'openai-compatible' | 'anthropic' | 'gemini';
+  adapter: ProviderProtocol;
   defaultBaseUrl: string | null;
   baseUrlRequired: boolean;
   apiKeyRequired: boolean;
   modelExamples: readonly string[];
+  allowBaseUrlOverride?: boolean;
+  capabilities?: Record<string, boolean | null>;
 };
 
-export type ProviderProbeAttempt = {
-  model: string;
-  status: 'working' | 'failed';
-  errorCode?: string;
-  errorStage?: string;
+export type DiscoveredProviderModel = {
+  id: string;
+  name?: string;
+  ownedBy?: string;
+  contextLength?: number;
+  capabilities?: Record<string, boolean | null>;
+};
+
+export type ProviderModelDiscovery = {
+  status: 'supported' | 'unsupported' | 'failed';
+  models: DiscoveredProviderModel[];
+  testedEndpoint?: string;
+  httpStatus?: number;
+  requestId?: string;
+  latencyMs?: number;
+  fromCache: boolean;
+  message?: string;
+  method?: 'sdk' | 'fetch' | 'manual';
 };
 
 export type ProviderDiagnostic = {
-  providerType: string;
-  availability: 'available' | 'limited' | 'unavailable' | 'unknown';
-  plan: 'free' | 'paid' | 'mixed' | 'unknown';
-  billing: 'request_succeeded' | 'credits_required' | 'rate_limited' | 'not_checked' | 'unknown';
-  planDetection: 'provider_declared' | 'inferred_from_error' | 'not_exposed';
-  completionSucceeded: boolean;
-  modelsEndpoint: 'supported' | 'unsupported' | 'failed' | 'not_checked';
-  modelCount: number;
-  selectedModel?: string;
-  selectedAutomatically?: boolean;
-  attempts?: ProviderProbeAttempt[];
-  errorStage?: string;
+  success: boolean;
+  ok: boolean;
+  stage: 'configuration' | 'authentication' | 'model_discovery' | 'inference' | 'streaming';
+  status: string;
+  errorType?: string;
+  keyValid: boolean | null;
+  providerReachable: boolean | null;
+  modelAvailable: boolean | null;
   retryable: boolean;
-  evidence: string[];
-  note: string;
-  checkedAt: string;
+  httpStatus?: number;
+  providerCode?: string;
+  message: string;
+  userMessage: string;
+  userMessageAr: string;
+  userMessageEn: string;
+  technicalMessage?: string;
+  requestId?: string;
+  upstreamRequestId?: string;
+  retryAfterSeconds?: number;
+  testedEndpoint?: string;
+  testedModel?: string;
+  latencyMs?: number;
+  discovery?: ProviderModelDiscovery;
 };
 
 export type ProviderSummary = {
   id: string;
   name: string;
   type: string;
+  protocol: ProviderProtocol;
   default_model: string;
   base_url?: string | null;
+  streaming_enabled?: boolean;
+  key_mask?: string | null;
+  has_custom_headers?: boolean;
+  credential_version?: number;
   validation_status: ValidationStatus;
   validation_error_code?: string | null;
+  last_error_message?: string | null;
   validated_at?: string | null;
 };
 

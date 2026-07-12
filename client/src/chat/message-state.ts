@@ -15,6 +15,7 @@ export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  status?: 'completed' | 'partial' | 'failed' | string;
   tool_calls: ToolCall[];
   attachments?: AttachmentSummary[];
 };

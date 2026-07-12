@@ -1,6 +1,6 @@
 import type { LLMImage, LLMToolCall, LLMToolSpec, Msg } from '../llm-types.js';
 
-export type ProviderProtocol = 'openai-compatible' | 'anthropic' | 'gemini';
+export type ProviderProtocol = 'openai' | 'openai-compatible' | 'anthropic' | 'gemini';
 export type ProviderAuthStyle = 'bearer' | 'x-api-key' | 'google-api-key' | 'none';
 export type ProviderCapability = boolean | null;
 
@@ -42,10 +42,14 @@ export type NormalizedProviderUrls = {
 
 export type NormalizedProviderConfig = NormalizedProviderUrls & {
   providerType: string;
+  protocol: ProviderProtocol;
   definition: ProviderDefinition;
   apiKey: string;
   selectedModel: string | null;
   customHeaders: Readonly<Record<string, string>>;
+  userId?: string | undefined;
+  providerId?: string | undefined;
+  credentialVersion: number;
 };
 
 export type DiscoveredModel = {
@@ -60,6 +64,7 @@ export type DiscoveredModel = {
     streaming?: ProviderCapability | undefined;
     embeddings?: ProviderCapability | undefined;
   } | undefined;
+  raw?: unknown;
 };
 
 export type ModelDiscoveryStatus = 'supported' | 'unsupported' | 'failed';
@@ -72,12 +77,16 @@ export type ModelDiscoveryResult = {
   latencyMs?: number | undefined;
   fromCache: boolean;
   message?: string | undefined;
+  method?: 'sdk' | 'fetch' | 'manual' | undefined;
 };
+
+export type ProviderDiagnosticStage = 'configuration' | 'authentication' | 'model_discovery' | 'inference' | 'streaming';
 
 export type ProviderDiagnosticStatus =
   | 'ready'
   | 'invalid_api_key'
   | 'forbidden'
+  | 'model_not_allowed'
   | 'invalid_base_url'
   | 'endpoint_not_found'
   | 'model_not_found'
@@ -86,6 +95,9 @@ export type ProviderDiagnosticStatus =
   | 'rate_limited'
   | 'insufficient_quota'
   | 'billing_required'
+  | 'context_too_large'
+  | 'unsupported_parameter'
+  | 'unsupported_streaming'
   | 'timeout'
   | 'network_error'
   | 'dns_error'
@@ -98,7 +110,10 @@ export type ProviderDiagnosticStatus =
 
 export type ProviderDiagnosticResult = {
   success: boolean;
+  ok: boolean;
+  stage: ProviderDiagnosticStage;
   status: ProviderDiagnosticStatus;
+  errorType?: string | undefined;
   keyValid: boolean | null;
   providerReachable: boolean | null;
   modelAvailable: boolean | null;
@@ -106,10 +121,13 @@ export type ProviderDiagnosticResult = {
   httpStatus?: number | undefined;
   providerCode?: string | undefined;
   message: string;
+  userMessage: string;
   userMessageAr: string;
   userMessageEn: string;
+  technicalMessage?: string | undefined;
   requestId?: string | undefined;
   upstreamRequestId?: string | undefined;
+  retryAfterSeconds?: number | undefined;
   testedEndpoint?: string | undefined;
   testedModel?: string | undefined;
   latencyMs?: number | undefined;
@@ -124,6 +142,7 @@ export type ProviderChatInput = {
   signal?: AbortSignal | undefined;
   temperature?: number | undefined;
   maxTokens?: number | undefined;
+  reasoningEffort?: 'low' | 'medium' | 'high' | undefined;
 };
 
 export type ProviderChatResult = {
@@ -136,6 +155,7 @@ export type ProviderChatResult = {
 
 export type ProviderStreamEvent =
   | { type: 'text_delta'; text: string }
+  | { type: 'tool_call_delta'; index: number; id?: string; name?: string; argumentsDelta?: string }
   | { type: 'tool_call'; call: LLMToolCall }
   | { type: 'completed'; result: ProviderChatResult }
   | { type: 'error'; diagnostic: ProviderDiagnosticResult };
@@ -147,6 +167,9 @@ export interface ProviderAdapter {
     baseUrl?: string | null | undefined;
     selectedModel?: string | null | undefined;
     customHeaders?: Record<string, string> | undefined;
+    userId?: string | undefined;
+    providerId?: string | undefined;
+    credentialVersion?: number | undefined;
   }): NormalizedProviderConfig;
   discoverModels(config: NormalizedProviderConfig, options?: { force?: boolean | undefined; signal?: AbortSignal | undefined }): Promise<ModelDiscoveryResult>;
   testConnection(config: NormalizedProviderConfig, selectedModel?: string | undefined): Promise<ProviderDiagnosticResult>;

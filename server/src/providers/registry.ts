@@ -1,28 +1,42 @@
-import type { ProviderDefinition } from './types.js';
+import type { ProviderDefinition, ProviderProtocol } from './types.js';
 
-const sharedCustomHeaders = ['x-api-key', 'api-key', 'anthropic-version', 'anthropic-beta'] as const;
+const sharedCustomHeaders = [
+  'anthropic-version',
+  'anthropic-beta',
+  'x-organization',
+  'x-project-id',
+  'x-provider-routing',
+  'http-referer',
+  'x-title'
+] as const;
+
 const openAiCaps = {
   modelDiscovery: true,
   chat: true,
-  streaming: null,
+  streaming: true,
   tools: null,
   vision: null,
   embeddings: null,
-  responsesApi: null
+  responsesApi: false
 } as const;
 
 const definitions: readonly ProviderDefinition[] = [
   {
-    id: 'openai', displayName: 'OpenAI', protocol: 'openai-compatible', defaultBaseUrl: 'https://api.openai.com/v1', authentication: 'bearer',
-    modelsPath: 'models', chatPath: 'chat/completions', responsesPath: 'responses', allowBaseUrlOverride: true, allowLocalNetwork: false,
-    apiKeyRequired: true, defaultHeaders: {}, allowedCustomHeaders: sharedCustomHeaders,
-    modelExamples: ['gpt-4.1-mini', 'gpt-4o-mini'], capabilities: { ...openAiCaps, streaming: true, tools: true, vision: true, embeddings: true, responsesApi: true }
+    id: 'openai', displayName: 'OpenAI', protocol: 'openai', defaultBaseUrl: 'https://api.openai.com/v1', authentication: 'bearer',
+    modelsPath: 'models', chatPath: 'chat/completions', responsesPath: 'responses', allowBaseUrlOverride: false, allowLocalNetwork: false,
+    apiKeyRequired: true, defaultHeaders: {}, allowedCustomHeaders: ['x-organization', 'x-project-id'],
+    modelExamples: ['gpt-4.1-mini', 'gpt-4o-mini'], capabilities: { ...openAiCaps, tools: true, vision: true, embeddings: true, responsesApi: true }
   },
   {
     id: 'openrouter', displayName: 'OpenRouter', protocol: 'openai-compatible', defaultBaseUrl: 'https://openrouter.ai/api/v1', authentication: 'bearer',
     modelsPath: 'models', chatPath: 'chat/completions', responsesPath: null, allowBaseUrlOverride: true, allowLocalNetwork: false,
     apiKeyRequired: true, defaultHeaders: {}, allowedCustomHeaders: sharedCustomHeaders,
-    modelExamples: ['openai/gpt-4.1-mini', 'google/gemini-2.0-flash-001'], capabilities: { ...openAiCaps, tools: null, vision: null }
+    modelExamples: ['openai/gpt-4.1-mini', 'google/gemini-2.0-flash-001'], capabilities: openAiCaps
+  },
+  {
+    id: 'nararouter', displayName: 'NaraRouter', protocol: 'openai-compatible', defaultBaseUrl: 'https://router.bynara.id/v1', authentication: 'bearer',
+    modelsPath: 'models', chatPath: 'chat/completions', responsesPath: null, allowBaseUrlOverride: true, allowLocalNetwork: false,
+    apiKeyRequired: true, defaultHeaders: {}, allowedCustomHeaders: sharedCustomHeaders, modelExamples: [], capabilities: openAiCaps
   },
   {
     id: 'anthropic', displayName: 'Anthropic', protocol: 'anthropic', defaultBaseUrl: 'https://api.anthropic.com', authentication: 'x-api-key',
@@ -55,6 +69,11 @@ const definitions: readonly ProviderDefinition[] = [
     id: 'mistral', displayName: 'Mistral AI', protocol: 'openai-compatible', defaultBaseUrl: 'https://api.mistral.ai/v1', authentication: 'bearer',
     modelsPath: 'models', chatPath: 'chat/completions', responsesPath: null, allowBaseUrlOverride: true, allowLocalNetwork: false,
     apiKeyRequired: true, defaultHeaders: {}, allowedCustomHeaders: sharedCustomHeaders, modelExamples: ['mistral-small-latest', 'mistral-large-latest'], capabilities: openAiCaps
+  },
+  {
+    id: 'xai', displayName: 'xAI', protocol: 'openai-compatible', defaultBaseUrl: 'https://api.x.ai/v1', authentication: 'bearer',
+    modelsPath: 'models', chatPath: 'chat/completions', responsesPath: null, allowBaseUrlOverride: true, allowLocalNetwork: false,
+    apiKeyRequired: true, defaultHeaders: {}, allowedCustomHeaders: sharedCustomHeaders, modelExamples: ['grok-3-mini', 'grok-3'], capabilities: openAiCaps
   },
   {
     id: 'nvidia', displayName: 'NVIDIA NIM', protocol: 'openai-compatible', defaultBaseUrl: 'https://integrate.api.nvidia.com/v1', authentication: 'bearer',
@@ -92,17 +111,22 @@ const definitions: readonly ProviderDefinition[] = [
     apiKeyRequired: true, defaultHeaders: {}, allowedCustomHeaders: sharedCustomHeaders, modelExamples: ['sonar', 'sonar-pro'], capabilities: { ...openAiCaps, modelDiscovery: false }
   },
   {
-    id: 'xai', displayName: 'xAI', protocol: 'openai-compatible', defaultBaseUrl: 'https://api.x.ai/v1', authentication: 'bearer',
-    modelsPath: 'models', chatPath: 'chat/completions', responsesPath: null, allowBaseUrlOverride: true, allowLocalNetwork: false,
-    apiKeyRequired: true, defaultHeaders: {}, allowedCustomHeaders: sharedCustomHeaders, modelExamples: ['grok-3-mini', 'grok-3'], capabilities: openAiCaps
-  },
-  {
     id: 'ollama', displayName: 'Ollama (local/development)', protocol: 'openai-compatible', defaultBaseUrl: 'http://127.0.0.1:11434/v1', authentication: 'none',
     modelsPath: 'models', chatPath: 'chat/completions', responsesPath: null, allowBaseUrlOverride: true, allowLocalNetwork: true,
-    apiKeyRequired: false, defaultHeaders: {}, allowedCustomHeaders: [], modelExamples: ['llama3.2', 'qwen2.5-coder'], capabilities: { ...openAiCaps, streaming: true, tools: null }
+    apiKeyRequired: false, defaultHeaders: {}, allowedCustomHeaders: [], modelExamples: ['llama3.2', 'qwen2.5-coder'], capabilities: openAiCaps
   },
   {
-    id: 'custom', displayName: 'Custom OpenAI-compatible', protocol: 'openai-compatible', defaultBaseUrl: null, authentication: 'bearer',
+    id: 'lmstudio', displayName: 'LM Studio (local/development)', protocol: 'openai-compatible', defaultBaseUrl: 'http://127.0.0.1:1234/v1', authentication: 'none',
+    modelsPath: 'models', chatPath: 'chat/completions', responsesPath: null, allowBaseUrlOverride: true, allowLocalNetwork: true,
+    apiKeyRequired: false, defaultHeaders: {}, allowedCustomHeaders: [], modelExamples: [], capabilities: openAiCaps
+  },
+  {
+    id: 'vllm', displayName: 'vLLM (local/development)', protocol: 'openai-compatible', defaultBaseUrl: 'http://127.0.0.1:8000/v1', authentication: 'none',
+    modelsPath: 'models', chatPath: 'chat/completions', responsesPath: null, allowBaseUrlOverride: true, allowLocalNetwork: true,
+    apiKeyRequired: false, defaultHeaders: {}, allowedCustomHeaders: [], modelExamples: [], capabilities: openAiCaps
+  },
+  {
+    id: 'custom', displayName: 'Custom provider', protocol: 'openai-compatible', defaultBaseUrl: null, authentication: 'bearer',
     modelsPath: 'models', chatPath: 'chat/completions', responsesPath: null, allowBaseUrlOverride: true, allowLocalNetwork: false,
     apiKeyRequired: true, defaultHeaders: {}, allowedCustomHeaders: sharedCustomHeaders, modelExamples: [], capabilities: openAiCaps
   }
@@ -112,11 +136,26 @@ const byId = new Map(definitions.map((definition) => [definition.id, definition]
 
 export const providerRegistry = definitions;
 
-export function getProviderDefinition(providerType: string): ProviderDefinition {
+function protocolTemplate(protocol: ProviderProtocol): Pick<ProviderDefinition, 'protocol' | 'authentication' | 'modelsPath' | 'chatPath' | 'responsesPath' | 'capabilities'> {
+  if (protocol === 'anthropic') {
+    return {
+      protocol, authentication: 'x-api-key', modelsPath: null, chatPath: 'v1/messages', responsesPath: null,
+      capabilities: { modelDiscovery: false, chat: true, streaming: true, tools: true, vision: true, embeddings: false, responsesApi: false }
+    };
+  }
+  if (protocol === 'gemini') {
+    return {
+      protocol, authentication: 'google-api-key', modelsPath: 'v1beta/models', chatPath: null, responsesPath: null,
+      capabilities: { modelDiscovery: true, chat: true, streaming: true, tools: true, vision: true, embeddings: true, responsesApi: false }
+    };
+  }
+  return { protocol, authentication: 'bearer', modelsPath: 'models', chatPath: 'chat/completions', responsesPath: protocol === 'openai' ? 'responses' : null, capabilities: openAiCaps };
+}
+
+export function getProviderDefinition(providerType: string, protocolOverride?: ProviderProtocol): ProviderDefinition {
   const id = providerType.trim().toLowerCase();
-  return byId.get(id) ?? {
-    ...byId.get('custom')!,
-    id,
-    displayName: id || 'Custom OpenAI-compatible'
-  };
+  const found = byId.get(id);
+  const base = found ?? { ...byId.get('custom')!, id, displayName: id || 'Custom provider' };
+  if (!protocolOverride || protocolOverride === base.protocol) return base;
+  return { ...base, ...protocolTemplate(protocolOverride), protocol: protocolOverride };
 }

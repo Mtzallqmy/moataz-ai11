@@ -6,12 +6,13 @@ import {
   providerRegistry
 } from './providers/index.js';
 
-export type ProviderAdapter = 'openai-compatible' | 'anthropic' | 'gemini';
+export type ProviderAdapter = 'openai' | 'openai-compatible' | 'anthropic' | 'gemini';
 
 export type ProviderCatalogEntry = {
   id: string;
   label: string;
   adapter: ProviderAdapter;
+  protocol: ProviderAdapter;
   defaultBaseUrl: string | null;
   baseUrlRequired: boolean;
   apiKeyRequired: boolean;
@@ -24,6 +25,7 @@ export const providerCatalog: readonly ProviderCatalogEntry[] = providerRegistry
   id: definition.id,
   label: definition.displayName,
   adapter: definition.protocol,
+  protocol: definition.protocol,
   defaultBaseUrl: definition.defaultBaseUrl,
   baseUrlRequired: definition.defaultBaseUrl === null,
   apiKeyRequired: definition.apiKeyRequired,
@@ -38,6 +40,7 @@ export function providerDefinition(type: string): ProviderCatalogEntry {
     id: definition.id,
     label: definition.displayName,
     adapter: definition.protocol,
+    protocol: definition.protocol,
     defaultBaseUrl: definition.defaultBaseUrl,
     baseUrlRequired: definition.defaultBaseUrl === null,
     apiKeyRequired: definition.apiKeyRequired,

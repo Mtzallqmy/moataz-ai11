@@ -4,12 +4,30 @@
 
 منصة وكيل ذكاء اصطناعي مبنية باستخدام **TypeScript وReact وExpress**، وتدعم إدارة مزودي النماذج، المحادثات، أدوات الملفات، تكامل GitHub وTelegram، والمصادقة الآمنة.
 
-> **حالة المشروع:** الإصدار 1.3.0 يضيف منصة مزوّدات موسعة، تحققًا فعليًا، Tool Calling لمزوّدات OpenAI-compatible، أدوات ويب، اكتشاف محادثات Telegram، وSandbox خارجي. ما يزال Streaming والترحيل النهائي إلى Drizzle وحفظ نقاط استئناف الوكيل ضمن المراحل التالية.
+> **حالة المشروع:** الإصدار 1.6.0 يوحّد بروتوكولات المزوّدات، يضيف NaraRouter رسميًا، يكتشف Model IDs الفعلية، يقدّم تشخيصًا دقيقًا، ويدعم SSE والإلغاء والبث الأصلي لـOpenAI-compatible وAnthropic وGemini.
 
 > **الإصدار 1.4.0:** أضيفت لوحة تحكم Telegram بأزرار وأوامر، اختيار المزوّد والوضع، فحص المفتاح والرصيد، أدوات الويب والملفات وGitHub، وتشخيص صريح للفوترة والأخطاء. Telegram control panel and provider diagnostics are now integrated with the same verified credentials used by the site.
 
-## الإصدار 1.5.0
+## الإصدار 1.6.0
 
+- إضافة NaraRouter كمزوّد OpenAI-compatible رسمي باستخدام `https://router.bynara.id/v1`.
+- حفظ بروتوكول المزود صراحةً وفصل OpenAI وOpenAI-compatible وAnthropic وGemini.
+- تطبيع Base URL مرة واحدة دون إضافة `/v1` أو endpoint مرتين.
+- اكتشاف النماذج عبر OpenAI SDK ثم fetch مباشر، مع Model ID يدوي عندما لا يدعم المزود `/models`.
+- إزالة التخمينات العامة للفوترة؛ رسائل الدفع لا تظهر إلا عند `402` أو كود صريح من المزود.
+- إضافة بث SSE، الإلغاء، حالات `partial/failed`، وتجميع tool calls المتدفقة.
+- إضافة Streaming أصلي لـAnthropic وGemini.
+- تشفير Custom Headers الآمنة وربط Cache بالمستخدم والمزود وإصدار المفتاح.
+- إضافة سجل تشخيص آمن لطلبات المزودات دون المفاتيح أو محتوى الرسائل.
+- إضافة سكربت تشخيص آمن `npm run diagnose:provider`.
+
+## الإصدار 1.5.1
+
+- إصلاح فشل بناء Railway الناتج عن ملفات Drizzle غير المكتملة والاعتماديات المفقودة.
+- حصر `better-sqlite3` ضمن اعتماديات التطوير وحذفه من صورة الإنتاج لتجنب فشل native addon على Railway.
+- جعل PostgreSQL إلزاميًا في الإنتاج، وإضافة retry وpool/timeouts واتصال SSL قابل للضبط.
+- نقل Healthcheck الخاص بـRailway إلى `/api/ready` لمنع نشر إعداد ناقص.
+- إصلاح تطبيع Base URL للمزودات عند إدخال hostname أو رابط endpoint كامل.
 - تشخيص المزوّدات أصبح يكتشف النماذج المتاحة للمفتاح، يجربها فعليًا، ويختار نموذجًا عاملًا تلقائيًا بدل قيم مثل `Free` أو `auto`.
 - أخطاء مفاتيح المزوّدات لا تُعامل كخطأ جلسة ولا تسجّل خروج المستخدم.
 - المحادثات تدعم صورًا وملفات نصية/برمجية وZIP وملفات ثنائية مع حدود حجم وعزل لكل مستخدم.
@@ -34,8 +52,8 @@
 - تسجيل الدخول وإدارة الجلسات باستخدام Access Token قصير العمر وRefresh Token دوّار داخل Cookie آمنة.
 - تشفير مفاتيح مزودي الذكاء الاصطناعي قبل تخزينها.
 - إنشاء المحادثات وإرسال الرسائل واختيار المزود والنموذج، مع اشتراط نجاح اختبار المزود قبل الاستخدام.
-- مزوّدات أصلية لـOpenAI وAnthropic وGemini، وواجهات OpenAI-compatible تشمل OpenRouter وNVIDIA وHugging Face وGroq وTogether وغيرها، مع رابط مخصص.
-- Tool Calling رسمي لمزوّدات OpenAI-compatible وحلقة وكيل محدودة الخطوات وسجل أدوات ظاهر في المحادثة.
+- مزوّدات أصلية لـOpenAI وAnthropic وGemini، وواجهات OpenAI-compatible تشمل NaraRouter وOpenRouter وGroq وTogether وDeepSeek وMistral وxAI وOllama وLM Studio وvLLM وغيرها، مع رابط مخصص.
+- Tool Calling رسمي لمزوّدات OpenAI-compatible وحلقة وكيل محدودة الخطوات وسجل أدوات ظاهر في المحادثة، مع بث SSE وإلغاء وحفظ حالات الرد الجزئي أو الفاشل.
 - تكاملات GitHub وTelegram وBrave Search وTavily وSandbox خارجي.
 - أدوات ملفات مقيدة داخل مساحة عمل المستخدم مع حماية من Path Traversal والروابط الرمزية.
 - WebSocket Terminal محلي باستخدام تذكرة قصيرة العمر، وتنفيذ أوامر الإنتاج فقط عبر Sandbox خارجي متحقق منه.
@@ -88,6 +106,7 @@ npm start                 # تشغيل النسخة المبنية
 npm run db:generate       # معلومات توليد مخطط المرحلة الحالية
 npm run db:migrate        # تطبيق الترحيلات التوافقية
 npm run db:check          # فحص الاتصال والترحيلات
+npm run diagnose:provider # تشخيص مزود من متغيرات البيئة دون طباعة المفتاح
 ```
 
 ## متغيرات البيئة الأساسية
@@ -119,11 +138,37 @@ TELEGRAM_POLLING=false
 
 ## إعداد المزوّدات
 
-1. افتح **المزوّدات** واختر المزود. سيُملأ Base URL تلقائيًا للمزوّدات المعروفة ويمكن تعديله.
-2. أدخل مفتاح API واسم النموذج، أو اضغط **تحميل النماذج** إذا كان المزود يوفر `/models`.
-3. احفظ الإعداد؛ ستكون حالته `untested`.
-4. اضغط **اختبار الاتصال**. لا تعمل المحادثة أو Telegram إلا عندما تصبح الحالة `verified`.
-5. لا يعني التوافق مع OpenAI أن كل مزود يدعم الأدوات؛ المنصة تستخدم Function Calling عندما يعيده المزود وتعرض الخطأ الحقيقي عند عدم الدعم.
+1. افتح **المزوّدات** واختر نوع البروتوكول: OpenAI أو OpenAI-compatible أو Anthropic أو Gemini.
+2. للمزوّدات المخصصة أدخل Base URL النهائي الذي يسبق `/models` و`/chat/completions`. لا تضف endpoint الدردشة نفسه.
+3. أدخل المفتاح واضغط **اكتشاف النماذج**؛ تُعرض قيم `model.id` الحقيقية ولا تُضاف أسماء OpenAI افتراضية إلى مزود مخصص.
+4. إذا أعاد `/models` الحالة `404` أو `405`، أدخل Model ID يدويًا ثم نفّذ **اختبار الاتصال**؛ لا يُصنف المفتاح على أنه خاطئ لمجرد غياب discovery.
+5. اترك حقل المفتاح فارغًا عند تعديل مزود محفوظ للاحتفاظ بالمفتاح السابق. لا يعيد الخادم المفتاح، بل Mask وآخر أربعة محارف فقط.
+6. لا تعمل المحادثة أو Telegram إلا بعد نجاح inference فعلي وتحول الحالة إلى `verified`.
+7. فشل Streaming لا يلغي نجاح non-streaming، وتظهر المرحلة وحالة HTTP والتفاصيل التقنية الآمنة بصورة منفصلة.
+
+### NaraRouter
+
+استخدم الإعداد التالي كما هو:
+
+```text
+Protocol: OpenAI-compatible
+Base URL: https://router.bynara.id/v1
+Models:   GET /models
+Chat:     POST /chat/completions
+Auth:     Authorization: Bearer <API_KEY>
+```
+
+لا تختَر نموذجًا ثابتًا. حمّل النماذج بالمفتاح الحالي ثم استخدم قيمة `id` الفعلية.
+
+### تشخيص مزود من الطرفية
+
+```bash
+PROVIDER_BASE_URL=https://router.bynara.id/v1 \
+PROVIDER_API_KEY="$TEST_NARAROUTER_API_KEY" \
+npm run diagnose:provider
+```
+
+السكربت يعرض حالة التطبيع والمصادقة وعدد النماذج والنموذج المختار ونتيجة non-streaming/streaming، ولا يطبع المفتاح.
 
 ## إعداد Telegram
 
@@ -147,7 +192,7 @@ TELEGRAM_POLLING=false
 2. اربط المستودع `Mtzallqmy/moataz-ai11`.
 3. سيستخدم Railway ملف `Dockerfile` الموجود في الجذر.
 4. أضف متغيرات البيئة السابقة من تبويب **Variables**.
-5. استخدم PostgreSQL/Supabase في الإنتاج، ولا تعتمد على SQLite داخل نظام ملفات Railway المؤقت.
+5. استخدم PostgreSQL/Supabase في الإنتاج؛ الإعداد يرفض SQLite تلقائيًا في Railway وproduction.
 6. بعد النشر افحص:
 
 ```text
@@ -195,7 +240,8 @@ GET /api/ready
 | GET | `/api/provider-catalog` | قائمة المزوّدات وروابطها الجاهزة |
 | POST | `/api/providers/models` | اكتشاف نماذج إعداد جديد متوافق مع OpenAI |
 | GET | `/api/providers/:id/models` | اكتشاف نماذج مزوّد محفوظ |
-| POST | `/api/providers/:id/test` | اختبار المزود وتفعيل استخدامه |
+| POST | `/api/providers/:id/test` | اكتشاف النماذج واختبار inference وتفعيل المزود |
+| POST | `/api/chats/:id/messages/stream` | إرسال رسالة وبث SSE مع الإلغاء والحالة الجزئية |
 | POST | `/api/integrations/:id/test` | اختبار التكامل وتشغيل Telegram عند تفعيله |
 | POST | `/api/tools/run` | تشغيل أداة مباشرة مع التأكيد عند الحاجة |
 
@@ -213,8 +259,10 @@ GET /api/ready
 
 ## حدود الإصدار الحالي
 
-- طبقة PostgreSQL الحالية طبقة توافق مرحلية؛ الانتقال النهائي إلى Drizzle migrations مؤجل للمرحلة الثانية.
-- Tool Calling الرسمي متاح لمزوّدات OpenAI-compatible؛ الأدوات الأصلية لـAnthropic وGemini والـStreaming والإلغاء وحفظ نقاط الاستئناف ما تزال مستقبلية.
+- طبقة قاعدة البيانات الحالية تستخدم SQL متوافقًا مع PostgreSQL وSQLite محليًا؛ ملفات Drizzle غير المكتملة أزيلت حتى لا تكسر البناء، ويجب تنفيذ ترحيل ORM كامل في إصدار مستقل عند الحاجة.
+- البث النصي الأصلي متاح لـAnthropic وGemini، لكن Tool Calling الأصلي لهما ليس بنفس اكتمال مسار OpenAI-compatible بعد.
+- لا تسمح بيئة SaaS الإنتاجية بعناوين Ollama/LM Studio المحلية؛ يمكن تمكينها محليًا فقط عبر `ALLOW_LOCAL_AI_PROVIDERS=true` خارج production.
+- حماية SSRF تتحقق من DNS قبل الاتصال وتمنع redirects في مسار المزودات، لكنها لا تستطيع تقديم ضمان pinning شبكي على مستوى نظام التشغيل ضد كل سيناريوهات DNS rebinding.
 - خدمة Sandbox الخارجية ليست جزءًا من هذا المستودع ويجب أن تكون عزلاً أمنيًا حقيقيًا؛ راجع `docs/EXTERNAL_SANDBOX.md`.
 - تشغيل Telegram polling على أكثر من Replica يحتاج Webhook أو Leader Election لمنع التكرار.
 
@@ -231,7 +279,7 @@ npm run build
 
 ## الإصدار
 
-الإصدار الحالي: **1.3.0**
+الإصدار الحالي: **1.6.0**
 
 راجع [`CHANGELOG.md`](CHANGELOG.md) لمعرفة التغييرات، و[`reports/phase-0-1-report-ar.md`](reports/phase-0-1-report-ar.md) لتقرير التنفيذ التفصيلي.
 

@@ -16,7 +16,21 @@ export class ApiError extends Error {
 
 export type ApiRequestOptions = RequestInit & { accessToken?: string };
 
-export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+async function errorFromResponse(response: Response): Promise<ApiError> {
+  let data: unknown = {};
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    try { data = await response.json(); } catch { data = {}; }
+  } else {
+    try { data = { message: (await response.text()).slice(0, 1000) }; } catch { data = {}; }
+  }
+  const record = data !== null && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : {};
+  const code = typeof record.error === 'string' ? record.error : 'request_failed';
+  const requestId = typeof record.requestId === 'string' ? record.requestId : response.headers.get('x-request-id') ?? undefined;
+  return new ApiError(response.status, code, record.details ?? record, requestId);
+}
+
+export async function apiResponse(path: string, options: ApiRequestOptions = {}): Promise<Response> {
   const { accessToken, headers, ...rest } = options;
   let response: Response;
   try {
@@ -24,7 +38,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       ...rest,
       credentials: 'include',
       headers: {
-        ...(rest.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...(rest.body !== undefined && !(rest.body instanceof FormData) && !(rest.body instanceof Blob) ? { 'Content-Type': 'application/json' } : {}),
         ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
         ...headers
       }
@@ -35,22 +49,17 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
       retryable: true
     });
   }
+  if (!response.ok) throw await errorFromResponse(response);
+  return response;
+}
 
-  let data: unknown = {};
+export async function apiRequest<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  const response = await apiResponse(path, options);
   const contentType = response.headers.get('content-type') ?? '';
-  if (contentType.includes('application/json')) {
-    try {
-      data = await response.json();
-    } catch {
-      data = {};
-    }
+  if (!contentType.includes('application/json')) return {} as T;
+  try {
+    return await response.json() as T;
+  } catch {
+    return {} as T;
   }
-
-  if (!response.ok) {
-    const record = data !== null && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : {};
-    const code = typeof record.error === 'string' ? record.error : 'request_failed';
-    const requestId = typeof record.requestId === 'string' ? record.requestId : response.headers.get('x-request-id') ?? undefined;
-    throw new ApiError(response.status, code, record.details, requestId);
-  }
-  return data as T;
 }

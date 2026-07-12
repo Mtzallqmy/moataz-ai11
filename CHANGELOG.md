@@ -2,6 +2,31 @@
 
 All notable changes are documented here. The project version is synchronized with `package.json`.
 
+## [1.6.0] — 2026-07-12
+
+### Unified provider runtime and NaraRouter
+
+- Added NaraRouter as an explicit OpenAI-compatible provider at `https://router.bynara.id/v1`, using actual model IDs returned by the current credential.
+- Persisted provider protocol, credential version, safe encrypted custom headers, streaming preference, key last-four mask, detailed validation state, and safe request diagnostics.
+- Centralized Base URL normalization without implicit `/v1`, duplicate endpoints, URL credentials, query strings, or unsafe protocols.
+- Added SDK-first model discovery, direct-fetch fallback, manual model testing when `/models` is unsupported, user/provider/credential-scoped cache invalidation, and exact provider-model ownership checks.
+- Replaced broad billing/key guesses with normalized HTTP, provider-code, request-ID, Retry-After, network, timeout, malformed-response, and mid-stream diagnostics.
+- Added real SSE chat streaming, cancellation, idempotency, partial/failed persistence, Unicode-safe parsing, `[DONE]` validation, and streamed tool-call assembly.
+- Added native Anthropic and Gemini streaming while preserving their protocol-specific message conversion.
+- Added production HTTPS/private-network protections for custom providers and an explicit non-production local-provider policy for Ollama, LM Studio, and vLLM.
+- Added a secret-safe `diagnose:provider` command and expanded unit/integration coverage for NaraRouter, URLs, errors, discovery, credentials, ownership, cache rotation, SSE, persistence, and audit redaction.
+
+## [1.5.1] — 2026-07-12
+
+### Railway production recovery
+
+- Removed an incomplete, unused Drizzle layer that imported missing packages and referenced absent configuration, which directly broke TypeScript and Railway builds.
+- Moved `better-sqlite3` to development-only dependencies, dynamically loaded it only for local SQLite, and prevented lifecycle compilation in the PostgreSQL production image.
+- Required PostgreSQL in production, added SSL CA validation, pool/timeouts, connection retry, safer idempotent migrations, and migration readiness logging.
+- Changed Railway and Docker healthchecks to `/api/ready`, updated the Railway schema URL, and added explicit Dockerfile configuration.
+- Fixed provider Base URL normalization for hostnames, full endpoint URLs, and known-provider root URLs.
+- Removed temporary branch mutation/audit workflows and updated deployment documentation and diagnostics.
+
 ## [1.5.0] — 2026-07-11
 
 ### Provider recovery, sessions, attachments, and multi-agent execution

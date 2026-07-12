@@ -1,12 +1,17 @@
 import { AppError } from '../errors.js';
 import type { NormalizedProviderUrls, ProviderDefinition } from './types.js';
 
-const knownTerminalPaths = [
-  '/chat/completions',
-  '/completions',
-  '/responses',
-  '/models'
-] as const;
+const knownTerminalPaths = ['/chat/completions', '/completions', '/responses', '/models'] as const;
+
+function stripOuterQuotes(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2) {
+    const first = trimmed[0];
+    const last = trimmed[trimmed.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
 
 function stripKnownTerminalPath(pathname: string): string {
   let current = pathname.replace(/\/{2,}/g, '/').replace(/\/+$/, '') || '/';
@@ -19,32 +24,29 @@ function stripKnownTerminalPath(pathname: string): string {
   return current;
 }
 
-function withDefaultProtocol(raw: string): string {
-  const trimmed = raw.trim();
-  const looksLikeHostPort = /^(?:localhost|\[[^\]]+\]|(?:[a-z0-9-]+\.)*[a-z0-9-]+):\d+(?:[/?#]|$)/i.test(trimmed);
-  const hasExplicitScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) && !looksLikeHostPort;
-  if (hasExplicitScheme) return trimmed;
-  return `https://${trimmed.replace(/^\/\//, '')}`;
-}
-
 function parseAbsoluteHttpUrl(raw: string): URL {
-  const candidate = withDefaultProtocol(raw);
+  const cleaned = stripOuterQuotes(raw);
+  const candidate = cleaned.startsWith('//')
+    ? `https:${cleaned}`
+    : cleaned.includes('://')
+      ? cleaned
+      : `https://${cleaned}`;
   let url: URL;
   try {
     url = new URL(candidate);
   } catch {
-    throw new AppError('provider_base_url_invalid', 422, 'The provider Base URL must be a valid HTTP or HTTPS URL.', {
-      stage: 'invalid_request', retryable: false
+    throw new AppError('provider_base_url_invalid', 422, 'The provider Base URL must be an absolute HTTP or HTTPS URL.', {
+      stage: 'configuration', retryable: false
     });
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     throw new AppError('provider_unsupported_protocol', 422, 'Only HTTP and HTTPS provider URLs are supported.', {
-      stage: 'invalid_request', retryable: false
+      stage: 'configuration', retryable: false
     });
   }
   if (url.username || url.password) {
     throw new AppError('provider_base_url_invalid', 422, 'Credentials must not be embedded in a provider URL.', {
-      stage: 'invalid_request', retryable: false
+      stage: 'configuration', retryable: false
     });
   }
   url.search = '';
@@ -63,21 +65,11 @@ export function normalizeProviderUrls(
   definition: ProviderDefinition,
   suppliedBaseUrl: string | null | undefined
 ): NormalizedProviderUrls {
-  const supplied = suppliedBaseUrl?.trim() || null;
-  let rawBaseUrl = supplied || definition.defaultBaseUrl;
-
-  if (supplied && definition.defaultBaseUrl) {
-    const suppliedUrl = parseAbsoluteHttpUrl(supplied);
-    const defaultUrl = parseAbsoluteHttpUrl(definition.defaultBaseUrl);
-    const suppliedPath = suppliedUrl.pathname.replace(/\/+$/, '') || '/';
-    if (suppliedUrl.origin === defaultUrl.origin && suppliedPath === '/') {
-      rawBaseUrl = definition.defaultBaseUrl;
-    }
-  }
-
+  const supplied = suppliedBaseUrl ? stripOuterQuotes(suppliedBaseUrl) : '';
+  const rawBaseUrl = supplied || definition.defaultBaseUrl;
   if (!rawBaseUrl) {
     return {
-      rawBaseUrl: supplied,
+      rawBaseUrl: supplied || null,
       normalizedBaseUrl: null,
       resolvedModelsUrl: null,
       resolvedChatUrl: null,
@@ -85,17 +77,24 @@ export function normalizeProviderUrls(
     };
   }
   if (supplied && !definition.allowBaseUrlOverride) {
-    const suppliedUrl = parseAbsoluteHttpUrl(supplied).toString().replace(/\/+$/, '');
+    const normalizedSupplied = parseAbsoluteHttpUrl(supplied).toString().replace(/\/+$/, '');
     const expected = definition.defaultBaseUrl ? parseAbsoluteHttpUrl(definition.defaultBaseUrl).toString().replace(/\/+$/, '') : null;
-    if (expected && suppliedUrl !== expected) {
+    if (expected && normalizedSupplied !== expected) {
       throw new AppError('provider_base_url_override_forbidden', 422, 'This provider does not allow a custom Base URL.', {
-        stage: 'invalid_request', retryable: false
+        stage: 'configuration', retryable: false
       });
     }
   }
-  const normalized = parseAbsoluteHttpUrl(rawBaseUrl).toString().replace(/\/+$/, '');
+  let normalizedUrl = parseAbsoluteHttpUrl(rawBaseUrl);
+  if (supplied && definition.defaultBaseUrl) {
+    const defaultUrl = parseAbsoluteHttpUrl(definition.defaultBaseUrl);
+    const suppliedHasOnlyOrigin = normalizedUrl.origin === defaultUrl.origin
+      && (normalizedUrl.pathname === '/' || normalizedUrl.pathname === '');
+    if (suppliedHasOnlyOrigin) normalizedUrl = defaultUrl;
+  }
+  const normalized = normalizedUrl.toString().replace(/\/+$/, '');
   return {
-    rawBaseUrl: supplied,
+    rawBaseUrl: supplied || null,
     normalizedBaseUrl: normalized,
     resolvedModelsUrl: joinEndpoint(normalized, definition.modelsPath),
     resolvedChatUrl: joinEndpoint(normalized, definition.chatPath),
@@ -109,9 +108,7 @@ export function customModelDiscoveryCandidates(normalizedBaseUrl: string): strin
   const path = parsed.pathname.replace(/\/+$/, '');
   const candidates = [new URL('models', `${base}/`).toString().replace(/\/+$/, '')];
   const hasVersionSegment = /\/(?:v\d+(?:beta\d*)?|openai\/v\d+)$/i.test(path);
-  if (!hasVersionSegment) {
-    candidates.push(new URL('v1/models', `${base}/`).toString().replace(/\/+$/, ''));
-  }
+  if (!hasVersionSegment) candidates.push(new URL('v1/models', `${base}/`).toString().replace(/\/+$/, ''));
   return [...new Set(candidates)];
 }
 

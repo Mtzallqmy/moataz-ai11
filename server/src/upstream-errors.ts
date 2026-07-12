@@ -51,6 +51,27 @@ function numericStatus(error: unknown): number | undefined {
   return undefined;
 }
 
+
+function upstreamCode(error: unknown): string {
+  const root = record(error);
+  const response = record(root?.response);
+  const responseBody = record(response?.body) ?? record(response?.data);
+  const body = record(root?.error) ?? responseBody;
+  const nestedError = record(body?.error);
+  const candidates = [
+    nestedError?.code,
+    nestedError?.type,
+    body?.code,
+    body?.type,
+    root?.code,
+    root?.type
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim().toLowerCase();
+  }
+  return '';
+}
+
 function upstreamMessage(error: unknown): string {
   const root = record(error);
   const response = record(root?.response);
@@ -93,16 +114,27 @@ function classified(
 
 export function classifyUpstreamError(error: unknown): ClassifiedUpstreamError {
   const upstreamStatus = numericStatus(error);
+  const code = upstreamCode(error);
   const message = upstreamMessage(error);
   const normalized = message.toLowerCase();
+  const searchable = `${code} ${normalized}`;
 
-  if (/abort|timeout|timed out|deadline exceeded/.test(normalized)) {
+  if (/abort|timeout|timed out|deadline exceeded/.test(searchable)) {
     return classified('timeout', 504, true, message, upstreamStatus);
   }
-  if (upstreamStatus === 401 || /unauthorized|invalid (api )?key|incorrect (api )?key|invalid token|token is invalid|api key not valid/.test(normalized)) {
+  if (upstreamStatus === 401 || /^(invalid_api_key|authentication_error|unauthorized)$/.test(code)
+    || /unauthorized|invalid (api )?key|incorrect (api )?key|invalid token|token is invalid|api key not valid/.test(normalized)) {
     return classified('authentication', 422, false, message, upstreamStatus);
   }
-  if (upstreamStatus === 402 || /payment required|insufficient credits?|not enough credits?|requires? more credits?|billing|quota exceeded|credit balance/.test(normalized)) {
+  // HTTP 429 represents rate/quota pressure, not a payment failure. Keep it
+  // separate even when the provider message mentions quota or credits.
+  if (upstreamStatus === 429 || /^(rate_limit(?:ed)?|too_many_requests|insufficient_quota|quota_exceeded|quota_exhausted)$/.test(code)
+    || /rate limit|too many requests|requests per minute|tokens per minute|capacity|quota (?:has been )?exceeded|insufficient quota/.test(normalized)) {
+    return classified('rate_limit', 429, true, message, upstreamStatus);
+  }
+  const explicitPaymentCode = /^(payment_required|billing_required|insufficient_funds|insufficient_credits?)$/.test(code);
+  const explicitPaymentMessage = /payment required|billing must be enabled|account balance is insufficient|insufficient (?:account )?(?:balance|funds)|requires? more credits?|add (?:funds|credits) to continue/.test(normalized);
+  if (upstreamStatus === 402 || explicitPaymentCode || explicitPaymentMessage) {
     return classified('billing', 402, false, message, upstreamStatus);
   }
   if (upstreamStatus === 403 || /forbidden|permission denied|insufficient scope|not allowed|access denied/.test(normalized)) {
@@ -110,9 +142,6 @@ export function classifyUpstreamError(error: unknown): ClassifiedUpstreamError {
   }
   if (upstreamStatus === 404 || /model.*not found|unknown model|no such model|does not exist|invalid model/.test(normalized)) {
     return classified('model_not_found', 422, false, message, upstreamStatus);
-  }
-  if (upstreamStatus === 429 || /rate limit|too many requests|requests per minute|tokens per minute|capacity/.test(normalized)) {
-    return classified('rate_limit', 429, true, message, upstreamStatus);
   }
   if (
     upstreamStatus === 400

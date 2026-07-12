@@ -2,66 +2,129 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { EmptyState, Notice, PageHeader, SpinnerLabel, StatusBadge } from '../components/ui';
 import { errorDetails, formatError } from '../lib/errors';
 import type { Language, TranslationKey } from '../lib/i18n';
-import type { ProviderCatalogEntry, ProviderDiagnostic, ProviderSummary } from '../types';
+import type {
+  ProviderCatalogEntry,
+  ProviderDiagnostic,
+  ProviderModelDiscovery,
+  ProviderProtocol,
+  ProviderSummary
+} from '../types';
 
 type T = (key: TranslationKey) => string;
 type Request = <R>(path: string, options?: RequestInit) => Promise<R>;
-type ProviderForm = { name: string; type: string; defaultModel: string; baseUrl: string; apiKey: string };
-type ProviderTestResponse = { responsePreview?: string; diagnostic?: ProviderDiagnostic; model?: string; models?: string[] };
-type ModelResponse = { supported: boolean; models: string[]; recommendedModel?: string | null };
+
+type ProviderForm = {
+  name: string;
+  type: string;
+  protocol: ProviderProtocol;
+  defaultModel: string;
+  baseUrl: string;
+  apiKey: string;
+  customHeaders: string;
+  streamingEnabled: boolean;
+};
+
+type ProviderTestResponse = {
+  responsePreview?: string;
+  diagnostic?: ProviderDiagnostic;
+  discovery?: ProviderModelDiscovery;
+  model?: string;
+  models?: string[];
+};
+
+type ModelResponse = {
+  supported: boolean;
+  models: string[];
+  modelsDetailed?: Array<{ id: string; name?: string }>;
+  recommendedModel?: string | null;
+  discovery?: ProviderModelDiscovery;
+};
 
 const fallbackCatalog: ProviderCatalogEntry[] = [
-  { id: 'openai', label: 'OpenAI', adapter: 'openai-compatible', defaultBaseUrl: 'https://api.openai.com/v1', baseUrlRequired: false, apiKeyRequired: true, modelExamples: ['gpt-4.1-mini'] },
-  { id: 'openrouter', label: 'OpenRouter', adapter: 'openai-compatible', defaultBaseUrl: 'https://openrouter.ai/api/v1', baseUrlRequired: false, apiKeyRequired: true, modelExamples: ['openai/gpt-4.1-mini'] },
-  { id: 'nvidia', label: 'NVIDIA NIM', adapter: 'openai-compatible', defaultBaseUrl: 'https://integrate.api.nvidia.com/v1', baseUrlRequired: false, apiKeyRequired: true, modelExamples: ['meta/llama-3.1-70b-instruct'] },
-  { id: 'huggingface', label: 'Hugging Face Router', adapter: 'openai-compatible', defaultBaseUrl: 'https://router.huggingface.co/v1', baseUrlRequired: false, apiKeyRequired: true, modelExamples: ['openai/gpt-oss-120b:cerebras'] },
+  { id: 'openai', label: 'OpenAI', adapter: 'openai', defaultBaseUrl: 'https://api.openai.com/v1', baseUrlRequired: false, apiKeyRequired: true, modelExamples: [] },
+  { id: 'openrouter', label: 'OpenRouter', adapter: 'openai-compatible', defaultBaseUrl: 'https://openrouter.ai/api/v1', baseUrlRequired: false, apiKeyRequired: true, modelExamples: [] },
+  { id: 'nararouter', label: 'NaraRouter', adapter: 'openai-compatible', defaultBaseUrl: 'https://router.bynara.id/v1', baseUrlRequired: false, apiKeyRequired: true, modelExamples: [] },
+  { id: 'groq', label: 'Groq', adapter: 'openai-compatible', defaultBaseUrl: 'https://api.groq.com/openai/v1', baseUrlRequired: false, apiKeyRequired: true, modelExamples: [] },
+  { id: 'together', label: 'Together AI', adapter: 'openai-compatible', defaultBaseUrl: 'https://api.together.xyz/v1', baseUrlRequired: false, apiKeyRequired: true, modelExamples: [] },
+  { id: 'deepseek', label: 'DeepSeek', adapter: 'openai-compatible', defaultBaseUrl: 'https://api.deepseek.com/v1', baseUrlRequired: false, apiKeyRequired: true, modelExamples: [] },
+  { id: 'mistral', label: 'Mistral', adapter: 'openai-compatible', defaultBaseUrl: 'https://api.mistral.ai/v1', baseUrlRequired: false, apiKeyRequired: true, modelExamples: [] },
+  { id: 'xai', label: 'xAI', adapter: 'openai-compatible', defaultBaseUrl: 'https://api.x.ai/v1', baseUrlRequired: false, apiKeyRequired: true, modelExamples: [] },
+  { id: 'anthropic', label: 'Anthropic', adapter: 'anthropic', defaultBaseUrl: 'https://api.anthropic.com', baseUrlRequired: false, apiKeyRequired: true, modelExamples: [] },
+  { id: 'gemini', label: 'Google Gemini', adapter: 'gemini', defaultBaseUrl: 'https://generativelanguage.googleapis.com', baseUrlRequired: false, apiKeyRequired: true, modelExamples: [] },
+  { id: 'ollama', label: 'Ollama', adapter: 'openai-compatible', defaultBaseUrl: 'http://127.0.0.1:11434/v1', baseUrlRequired: true, apiKeyRequired: false, modelExamples: [] },
+  { id: 'lmstudio', label: 'LM Studio', adapter: 'openai-compatible', defaultBaseUrl: 'http://127.0.0.1:1234/v1', baseUrlRequired: true, apiKeyRequired: false, modelExamples: [] },
+  { id: 'vllm', label: 'vLLM', adapter: 'openai-compatible', defaultBaseUrl: 'http://127.0.0.1:8000/v1', baseUrlRequired: true, apiKeyRequired: false, modelExamples: [] },
   { id: 'custom', label: 'Custom OpenAI-compatible', adapter: 'openai-compatible', defaultBaseUrl: null, baseUrlRequired: true, apiKeyRequired: true, modelExamples: [] }
 ];
 
-function emptyForm(catalog: readonly ProviderCatalogEntry[]): ProviderForm {
-  const initial = catalog.find((entry) => entry.id === 'openrouter') ?? catalog[0] ?? fallbackCatalog[0]!;
-  return { name: '', type: initial.id, defaultModel: 'auto', baseUrl: initial.defaultBaseUrl ?? '', apiKey: '' };
+function initialDefinition(catalog: readonly ProviderCatalogEntry[]): ProviderCatalogEntry {
+  return catalog.find((entry) => entry.id === 'openrouter') ?? catalog[0] ?? fallbackCatalog[0]!;
 }
 
-function diagnosticLabel(value: string, language: Language): string {
-  const ar: Record<string, string> = {
-    available: 'متاح الآن', limited: 'محدود مؤقتًا', unavailable: 'غير متاح', unknown: 'غير معروف',
-    free: 'مجاني', paid: 'مدفوع/يحتاج رصيدًا', mixed: 'مجاني ومدفوع',
-    request_succeeded: 'نجح الطلب', credits_required: 'الرصيد أو الدفع مطلوب', rate_limited: 'تم بلوغ الحد', not_checked: 'لم يُفحص',
-    supported: 'مدعوم', unsupported: 'غير معلن', failed: 'فشل', not_exposed: 'المزوّد لا يصرّح بالخطة',
-    inferred_from_error: 'استنتاج من خطأ الفوترة', provider_declared: 'معلنة من المزوّد'
+function emptyForm(catalog: readonly ProviderCatalogEntry[]): ProviderForm {
+  const initial = initialDefinition(catalog);
+  return {
+    name: '',
+    type: initial.id,
+    protocol: initial.adapter,
+    defaultModel: '',
+    baseUrl: initial.defaultBaseUrl ?? '',
+    apiKey: '',
+    customHeaders: '',
+    streamingEnabled: true
   };
-  const en: Record<string, string> = {
-    available: 'Available now', limited: 'Temporarily limited', unavailable: 'Unavailable', unknown: 'Unknown',
-    free: 'Free', paid: 'Paid/credits required', mixed: 'Free and paid',
-    request_succeeded: 'Request succeeded', credits_required: 'Credits or payment required', rate_limited: 'Limit reached', not_checked: 'Not checked',
-    supported: 'Supported', unsupported: 'Not exposed', failed: 'Failed', not_exposed: 'Provider does not expose the plan',
-    inferred_from_error: 'Inferred from billing error', provider_declared: 'Declared by provider'
-  };
-  return (language === 'ar' ? ar : en)[value] ?? value;
+}
+
+function parseCustomHeaders(value: string): Record<string, string> {
+  if (!value.trim()) return {};
+  const parsed = JSON.parse(value) as unknown;
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('Custom headers must be a JSON object.');
+  }
+  const result: Record<string, string> = {};
+  for (const [name, headerValue] of Object.entries(parsed)) {
+    if (typeof headerValue !== 'string') throw new Error(`Custom header ${name} must be a string.`);
+    result[name] = headerValue;
+  }
+  return result;
+}
+
+function stageLabel(stage: ProviderDiagnostic['stage'], language: Language): string {
+  const labels = language === 'ar'
+    ? { configuration: 'الإعداد', authentication: 'المصادقة', model_discovery: 'اكتشاف النماذج', inference: 'الاستدلال', streaming: 'البث' }
+    : { configuration: 'Configuration', authentication: 'Authentication', model_discovery: 'Model discovery', inference: 'Inference', streaming: 'Streaming' };
+  return labels[stage];
 }
 
 function DiagnosticCard({ diagnostic, language }: { diagnostic: ProviderDiagnostic; language: Language }) {
-  return <section className={`provider-diagnostic ${diagnostic.completionSucceeded ? 'ok' : 'failed'}`} aria-live="polite">
-    <div className="diagnostic-heading"><div><span className="eyebrow">API diagnostic</span><h3>{language === 'ar' ? 'نتيجة الفحص الفعلية' : 'Real provider diagnostic'}</h3></div><span className={`diagnostic-signal ${diagnostic.availability}`}>{diagnosticLabel(diagnostic.availability, language)}</span></div>
-    <div className="diagnostic-grid">
-      <div><small>{language === 'ar' ? 'تنفيذ النموذج' : 'Model completion'}</small><strong>{diagnostic.completionSucceeded ? (language === 'ar' ? 'نجح' : 'Passed') : (language === 'ar' ? 'فشل' : 'Failed')}</strong></div>
-      <div><small>{language === 'ar' ? 'الفوترة/الرصيد' : 'Billing/credits'}</small><strong>{diagnosticLabel(diagnostic.billing, language)}</strong></div>
-      <div><small>{language === 'ar' ? 'نوع الخطة' : 'Plan type'}</small><strong>{diagnosticLabel(diagnostic.plan, language)}</strong></div>
-      <div><small>{language === 'ar' ? 'قائمة النماذج' : 'Models endpoint'}</small><strong>{diagnosticLabel(diagnostic.modelsEndpoint, language)}{diagnostic.modelCount > 0 ? ` · ${diagnostic.modelCount}` : ''}</strong></div>
-      <div><small>{language === 'ar' ? 'النموذج العامل' : 'Working model'}</small><strong>{diagnostic.selectedModel || '—'}</strong></div>
-      <div><small>{language === 'ar' ? 'طريقة الاختيار' : 'Selection'}</small><strong>{diagnostic.selectedAutomatically ? (language === 'ar' ? 'تلقائي بعد اختبار فعلي' : 'Automatic after real probe') : (language === 'ar' ? 'النموذج المحدد نجح' : 'Configured model passed')}</strong></div>
+  const safeTechnical = [
+    diagnostic.technicalMessage,
+    diagnostic.providerCode ? `providerCode=${diagnostic.providerCode}` : undefined,
+    diagnostic.requestId ? `requestId=${diagnostic.requestId}` : undefined,
+    diagnostic.upstreamRequestId ? `upstreamRequestId=${diagnostic.upstreamRequestId}` : undefined,
+    diagnostic.testedEndpoint ? `endpoint=${diagnostic.testedEndpoint}` : undefined,
+    diagnostic.testedModel ? `model=${diagnostic.testedModel}` : undefined
+  ].filter(Boolean).join('\n');
+
+  return <section className={`provider-diagnostic ${diagnostic.ok ? 'ok' : 'failed'}`} aria-live="polite">
+    <div className="diagnostic-heading">
+      <div><span className="eyebrow">Provider diagnostic</span><h3>{diagnostic.ok ? (language === 'ar' ? 'الاتصال يعمل' : 'Connection works') : (language === 'ar' ? 'فشل الفحص' : 'Diagnostic failed')}</h3></div>
+      <span className={`status-badge ${diagnostic.ok ? 'verified' : 'failed'}`}>{stageLabel(diagnostic.stage, language)}</span>
     </div>
-    <p>{language === 'ar'
-      ? diagnostic.billing === 'credits_required'
-        ? 'أعلن المزوّد أن الرصيد أو الدفع مطلوب. المفتاح قد يكون صحيحًا، لكن الطلب لن يعمل قبل إضافة رصيد أو اختيار نموذج متاح.'
-        : diagnostic.completionSucceeded
-          ? 'تم تنفيذ طلب حقيقي، واختيار نموذج يعمل تلقائيًا عند الحاجة. لا يتم تخمين أن الحساب مجاني أو مدفوع إذا لم يصرّح المزود بذلك.'
-          : diagnostic.note
-      : diagnostic.note}</p>
-    {diagnostic.errorStage && <code>{diagnostic.errorStage} · retryable: {String(diagnostic.retryable)}</code>}
-    {diagnostic.attempts && diagnostic.attempts.length > 0 && <div className="probe-attempts"><strong>{language === 'ar' ? 'محاولات النماذج' : 'Model probes'}</strong>{diagnostic.attempts.map((attempt) => <div className={`probe-row ${attempt.status}`} key={`${attempt.model}-${attempt.status}`}><span>{attempt.status === 'working' ? '✓' : '×'}</span><code>{attempt.model}</code><small>{attempt.errorCode ?? attempt.errorStage ?? attempt.status}</small></div>)}</div>}
-    <div className="diagnostic-evidence">{diagnostic.evidence.map((item) => <span key={item}>{item}</span>)}</div>
+    <div className="diagnostic-grid">
+      <div><small>HTTP</small><strong>{diagnostic.httpStatus ?? '—'}</strong></div>
+      <div><small>{language === 'ar' ? 'نوع الخطأ' : 'Error type'}</small><strong>{diagnostic.errorType ?? diagnostic.status}</strong></div>
+      <div><small>{language === 'ar' ? 'المفتاح' : 'API key'}</small><strong>{diagnostic.keyValid === true ? (language === 'ar' ? 'مقبول' : 'Accepted') : diagnostic.keyValid === false ? (language === 'ar' ? 'مرفوض' : 'Rejected') : (language === 'ar' ? 'غير محسوم' : 'Not determined')}</strong></div>
+      <div><small>{language === 'ar' ? 'النموذج' : 'Model'}</small><strong>{diagnostic.testedModel ?? '—'}</strong></div>
+      <div><small>{language === 'ar' ? 'إعادة المحاولة' : 'Retryable'}</small><strong>{diagnostic.retryable ? (language === 'ar' ? 'نعم' : 'Yes') : (language === 'ar' ? 'لا' : 'No')}</strong></div>
+      <div><small>{language === 'ar' ? 'الزمن' : 'Latency'}</small><strong>{diagnostic.latencyMs === undefined ? '—' : `${diagnostic.latencyMs} ms`}</strong></div>
+    </div>
+    <p>{language === 'ar' ? diagnostic.userMessageAr : diagnostic.userMessageEn}</p>
+    {diagnostic.discovery && <div className="probe-attempts">
+      <strong>{language === 'ar' ? 'اكتشاف النماذج' : 'Model discovery'}</strong>
+      <div className="probe-row"><span>{diagnostic.discovery.status === 'supported' ? '✓' : diagnostic.discovery.status === 'unsupported' ? '!' : '×'}</span><code>{diagnostic.discovery.method ?? '—'} · {diagnostic.discovery.models.length}</code><small>{diagnostic.discovery.message ?? diagnostic.discovery.status}</small></div>
+    </div>}
+    {safeTechnical && <details><summary>{language === 'ar' ? 'التفاصيل التقنية الآمنة' : 'Safe technical details'}</summary><pre>{safeTechnical}</pre><button type="button" className="ghost compact" onClick={() => { void navigator.clipboard.writeText(safeTechnical); }}>{language === 'ar' ? 'نسخ' : 'Copy'}</button></details>}
   </section>;
 }
 
@@ -71,14 +134,19 @@ export function ProvidersPage({ request, t, language }: { request: Request; t: T
   const [form, setForm] = useState<ProviderForm>(() => emptyForm(fallbackCatalog));
   const [modelSuggestions, setModelSuggestions] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [busy, setBusy] = useState<'save' | 'test' | 'models' | string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'success' | 'error' | 'info'; text: string } | null>(null);
   const [diagnostic, setDiagnostic] = useState<ProviderDiagnostic | null>(null);
 
   const selectedDefinition = useMemo(() => catalog.find((entry) => entry.id === form.type) ?? {
-    id: form.type, label: form.type, adapter: 'openai-compatible' as const, defaultBaseUrl: null,
-    baseUrlRequired: true, apiKeyRequired: true, modelExamples: []
-  }, [catalog, form.type]);
+    id: form.type,
+    label: form.type,
+    adapter: form.protocol,
+    defaultBaseUrl: null,
+    baseUrlRequired: true,
+    apiKeyRequired: form.type !== 'ollama' && form.type !== 'lmstudio' && form.type !== 'vllm',
+    modelExamples: []
+  }, [catalog, form.protocol, form.type]);
 
   const load = useCallback(async () => {
     try {
@@ -94,9 +162,6 @@ export function ProvidersPage({ request, t, language }: { request: Request; t: T
   }, [language, request]);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => {
-    if (modelSuggestions.length === 0) setModelSuggestions([...selectedDefinition.modelExamples]);
-  }, [modelSuggestions.length, selectedDefinition.modelExamples]);
 
   const reset = () => {
     setEditingId(null);
@@ -105,73 +170,89 @@ export function ProvidersPage({ request, t, language }: { request: Request; t: T
     setDiagnostic(null);
   };
 
-  const payload = () => ({
-    name: form.name.trim(),
-    type: form.type,
-    defaultModel: form.defaultModel.trim() || 'auto',
-    ...(form.baseUrl.trim() ? { baseUrl: form.baseUrl.trim() } : {}),
-    ...(form.apiKey.trim() ? { apiKey: form.apiKey.trim() } : {})
-  });
-  const canCallDraft = !selectedDefinition.apiKeyRequired || Boolean(form.apiKey.trim());
+  const payload = (includeBlankKey = false) => {
+    const customHeaders = parseCustomHeaders(form.customHeaders);
+    return {
+      name: form.name.trim(),
+      type: form.type,
+      protocol: form.protocol,
+      defaultModel: form.defaultModel.trim(),
+      baseUrl: form.baseUrl.trim(),
+      streamingEnabled: form.streamingEnabled,
+      customHeaders,
+      ...((includeBlankKey || form.apiKey.length > 0) ? { apiKey: form.apiKey } : {})
+    };
+  };
+
+  const canCallDraft = (!selectedDefinition.apiKeyRequired || Boolean(form.apiKey.trim())) && Boolean(form.defaultModel.trim() || form.baseUrl.trim());
+
   const recordFailure = (caught: unknown) => {
     setNotice({ tone: 'error', text: formatError(caught, language) });
     setDiagnostic(errorDetails(caught)?.diagnostic ?? null);
   };
 
-  const applyTestResponse = (response: ProviderTestResponse) => {
-    setDiagnostic(response.diagnostic ?? null);
-    if (response.models?.length) setModelSuggestions(response.models);
-    if (response.model) setForm((current) => ({ ...current, defaultModel: response.model! }));
+  const applyModels = (response: ModelResponse | ProviderTestResponse) => {
+    const models = response.models ?? response.discovery?.models.map((model) => model.id) ?? [];
+    setModelSuggestions(models);
+    if ('recommendedModel' in response && response.recommendedModel) {
+      setForm((current) => ({ ...current, defaultModel: response.recommendedModel! }));
+    }
+  };
+
+  const discoverDraftModels = async () => {
+    setBusy('models'); setNotice(null); setDiagnostic(null);
+    try {
+      const body = payload(true);
+      const response = await request<ModelResponse>('/api/providers/models', { method: 'POST', body: JSON.stringify(body) });
+      applyModels(response);
+      setNotice({
+        tone: response.supported ? 'success' : 'info',
+        text: response.supported
+          ? (language === 'ar' ? `تم اكتشاف ${response.models.length} نموذجًا. اختر Model ID الفعلي ثم نفّذ اختبار الاتصال.` : `Discovered ${response.models.length} models. Select an actual model ID, then test the connection.`)
+          : (language === 'ar' ? 'مسار النماذج غير مدعوم. أدخل Model ID يدويًا ثم اختبر الاستدلال؛ هذا لا يعني أن المفتاح غير صالح.' : 'The models endpoint is unsupported. Enter a model ID manually and test inference; this does not mean the key is invalid.')
+      });
+    } catch (caught) { recordFailure(caught); }
+    finally { setBusy(null); }
   };
 
   const testDraft = async () => {
-    if (!canCallDraft) {
-      setNotice({ tone: 'error', text: language === 'ar' ? 'أدخل مفتاح API لاختبار الاتصال.' : 'Enter an API key to test the connection.' });
+    if (!form.defaultModel.trim()) {
+      setNotice({ tone: 'error', text: language === 'ar' ? 'اختر Model ID مكتشفًا أو أدخله يدويًا قبل اختبار الاستدلال.' : 'Select a discovered model ID or enter one manually before testing inference.' });
       return;
     }
     setBusy('test'); setNotice(null); setDiagnostic(null);
     try {
       const response = await request<ProviderTestResponse>('/api/providers/test', {
         method: 'POST',
-        body: JSON.stringify({ type: form.type, model: form.defaultModel.trim() || 'auto', apiKey: form.apiKey.trim(), ...(form.baseUrl.trim() ? { baseUrl: form.baseUrl.trim() } : {}) })
+        body: JSON.stringify({ ...payload(true), model: form.defaultModel.trim() })
       });
-      applyTestResponse(response);
-      setNotice({ tone: 'success', text: `${t('connectionSuccessful')} — ${language === 'ar' ? 'النموذج العامل' : 'Working model'}: ${response.model ?? '—'}${response.responsePreview ? ` — ${response.responsePreview}` : ''}` });
-    } catch (caught) { recordFailure(caught); }
-    finally { setBusy(null); }
-  };
-
-  const discoverDraftModels = async () => {
-    if (!canCallDraft) {
-      setNotice({ tone: 'error', text: language === 'ar' ? 'أدخل مفتاح API أولًا.' : 'Enter the API key first.' });
-      return;
-    }
-    setBusy('models'); setNotice(null);
-    try {
-      const response = await request<ModelResponse>('/api/providers/models', {
-        method: 'POST', body: JSON.stringify({ type: form.type, apiKey: form.apiKey.trim(), ...(form.baseUrl.trim() ? { baseUrl: form.baseUrl.trim() } : {}) })
-      });
-      const models = response.models.length > 0 ? response.models : [...selectedDefinition.modelExamples];
-      setModelSuggestions(models);
-      if (response.recommendedModel) setForm((current) => ({ ...current, defaultModel: response.recommendedModel! }));
-      setNotice({
-        tone: response.supported ? 'success' : 'info',
-        text: response.supported
-          ? (language === 'ar' ? `تم اكتشاف ${models.length} نموذجًا. تم اقتراح ${response.recommendedModel ?? models[0] ?? 'auto'}، وسيتم اختبار العامل منها عند الحفظ.` : `Discovered ${models.length} models. Recommended ${response.recommendedModel ?? models[0] ?? 'auto'}; a working model will be probed on save.`)
-          : (language === 'ar' ? 'المزوّد لا يعلن قائمة عامة؛ سيجرب النظام النماذج المعروفة ويختار العامل منها.' : 'The provider does not expose a public model list; known candidates will be probed automatically.')
-      });
+      setDiagnostic(response.diagnostic ?? null);
+      applyModels(response);
+      if (response.model) setForm((current) => ({ ...current, defaultModel: response.model! }));
+      setNotice({ tone: 'success', text: `${t('connectionSuccessful')} — ${response.model ?? form.defaultModel}` });
     } catch (caught) { recordFailure(caught); }
     finally { setBusy(null); }
   };
 
   const discoverSavedModels = async (provider: ProviderSummary) => {
-    setBusy(`models-${provider.id}`); setNotice(null);
+    setBusy(`models-${provider.id}`); setNotice(null); setDiagnostic(null);
     try {
       const response = await request<ModelResponse>(`/api/providers/${provider.id}/models`);
       setEditingId(provider.id);
-      setForm({ name: provider.name, type: provider.type, defaultModel: response.recommendedModel ?? provider.default_model ?? 'auto', baseUrl: provider.base_url ?? '', apiKey: '' });
-      setModelSuggestions(response.models);
-      setNotice({ tone: response.supported ? 'success' : 'info', text: language === 'ar' ? `تم اكتشاف ${response.models.length} نموذجًا.` : `Discovered ${response.models.length} models.` });
+      setForm({
+        name: provider.name,
+        type: provider.type,
+        protocol: provider.protocol,
+        defaultModel: provider.default_model ?? '',
+        baseUrl: provider.base_url ?? '',
+        apiKey: '',
+        customHeaders: '',
+        streamingEnabled: provider.streaming_enabled !== false
+      });
+      applyModels(response);
+      setNotice({ tone: response.supported ? 'success' : 'info', text: response.supported
+        ? (language === 'ar' ? `تم اكتشاف ${response.models.length} نموذجًا.` : `Discovered ${response.models.length} models.`)
+        : (language === 'ar' ? 'الاكتشاف غير مدعوم؛ أبقِ Model ID اليدوي ثم اختبره.' : 'Discovery is unsupported; keep a manual model ID and test it.') });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (caught) { recordFailure(caught); }
     finally { setBusy(null); }
@@ -179,13 +260,17 @@ export function ProvidersPage({ request, t, language }: { request: Request; t: T
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!editingId && selectedDefinition.apiKeyRequired && !form.apiKey.trim()) return;
+    if (!form.defaultModel.trim()) {
+      setNotice({ tone: 'error', text: language === 'ar' ? 'يجب اختيار Model ID حقيقي قبل الحفظ والفحص.' : 'Choose an actual model ID before saving and verifying.' });
+      return;
+    }
     setBusy('save'); setNotice(null); setDiagnostic(null);
     try {
       let id = editingId;
-      if (editingId) await request(`/api/providers/${editingId}`, { method: 'PATCH', body: JSON.stringify(payload()) });
-      else {
-        const created = await request<{ provider: ProviderSummary }>('/api/providers', { method: 'POST', body: JSON.stringify(payload()) });
+      if (editingId) {
+        await request(`/api/providers/${editingId}`, { method: 'PATCH', body: JSON.stringify(payload(false)) });
+      } else {
+        const created = await request<{ provider: ProviderSummary }>('/api/providers', { method: 'POST', body: JSON.stringify(payload(true)) });
         id = created.provider.id;
       }
       if (!id) throw new Error('provider_id_missing');
@@ -193,7 +278,7 @@ export function ProvidersPage({ request, t, language }: { request: Request; t: T
       const finalDiagnostic = tested.diagnostic ?? null;
       reset();
       setDiagnostic(finalDiagnostic);
-      setNotice({ tone: 'success', text: language === 'ar' ? `تم الحفظ والفحص. النموذج العامل المختار: ${tested.model ?? '—'}.` : `Saved and verified. Selected working model: ${tested.model ?? '—'}.` });
+      setNotice({ tone: 'success', text: language === 'ar' ? `تم الحفظ والتحقق باستخدام ${tested.model ?? form.defaultModel}.` : `Saved and verified with ${tested.model ?? form.defaultModel}.` });
       await load();
     } catch (caught) { recordFailure(caught); await load(); }
     finally { setBusy(null); }
@@ -212,9 +297,19 @@ export function ProvidersPage({ request, t, language }: { request: Request; t: T
 
   const edit = (provider: ProviderSummary) => {
     setEditingId(provider.id);
-    setForm({ name: provider.name, type: provider.type, defaultModel: provider.default_model || 'auto', baseUrl: provider.base_url ?? '', apiKey: '' });
-    setModelSuggestions(catalog.find((entry) => entry.id === provider.type)?.modelExamples.slice() ?? []);
-    setDiagnostic(null); window.scrollTo({ top: 0, behavior: 'smooth' });
+    setForm({
+      name: provider.name,
+      type: provider.type,
+      protocol: provider.protocol,
+      defaultModel: provider.default_model ?? '',
+      baseUrl: provider.base_url ?? '',
+      apiKey: '',
+      customHeaders: '',
+      streamingEnabled: provider.streaming_enabled !== false
+    });
+    setModelSuggestions([]);
+    setDiagnostic(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const remove = async (id: string) => {
@@ -227,35 +322,45 @@ export function ProvidersPage({ request, t, language }: { request: Request; t: T
 
   const changeType = (type: string) => {
     const definition = catalog.find((entry) => entry.id === type);
-    setForm((current) => ({ ...current, type, baseUrl: definition?.defaultBaseUrl ?? '', defaultModel: 'auto' }));
-    setModelSuggestions(definition?.modelExamples.slice() ?? []); setDiagnostic(null);
+    setForm((current) => ({
+      ...current,
+      type,
+      protocol: definition?.adapter ?? current.protocol,
+      baseUrl: definition?.defaultBaseUrl ?? '',
+      defaultModel: ''
+    }));
+    setModelSuggestions([]);
+    setDiagnostic(null);
   };
 
   return <div className="page-stack providers-page">
-    <PageHeader eyebrow={t('settings')} title={t('providers')} description={language === 'ar' ? 'أدخل المفتاح واترك النموذج «auto». سيكتشف النظام النماذج المسموح بها، يجرب عدة نماذج فعليًا، ويحفظ أول نموذج ينجح.' : 'Enter the key and leave the model as “auto”. The system discovers permitted models, probes real requests, and saves the first working model.'} />
+    <PageHeader eyebrow={t('settings')} title={t('providers')} description={language === 'ar' ? 'احفظ البروتوكول والرابط والمفتاح بأمان، اكتشف Model IDs الفعلية، ثم اختبر استدلالًا حقيقيًا دون افتراض نموذج OpenAI.' : 'Save the protocol, endpoint, and key securely; discover actual model IDs, then run a real inference test without assuming an OpenAI model.'} />
     {notice && <Notice tone={notice.tone} onDismiss={() => setNotice(null)}><pre>{notice.text}</pre></Notice>}
     <section className="panel provider-editor">
-      <div className="section-heading"><div><h2>{editingId ? t('edit') : t('addProvider')}</h2><p>{language === 'ar' ? 'يمكن لصق عنوان المضيف أو Base URL أو حتى مسار /chat/completions؛ سيطبعه النظام إلى جذر API الصحيح. أخطاء المفتاح لا تسجل خروجك من المنصة.' : 'Paste a hostname, base URL, or even a /chat/completions endpoint; it will be normalized to the API root. Provider-key failures never sign you out.'}</p></div>{editingId && <button type="button" className="ghost" onClick={reset}>{t('cancel')}</button>}</div>
+      <div className="section-heading"><div><h2>{editingId ? t('edit') : t('addProvider')}</h2><p>{language === 'ar' ? 'NaraRouter يستخدم OpenAI-compatible مع https://router.bynara.id/v1. يمكن لصق /models أو /chat/completions وسيُنظّف الرابط دون تكرار /v1.' : 'NaraRouter uses OpenAI-compatible at https://router.bynara.id/v1. You may paste /models or /chat/completions; the endpoint is normalized without duplicating /v1.'}</p></div>{editingId && <button type="button" className="ghost" onClick={reset}>{t('cancel')}</button>}</div>
       <form onSubmit={save} className="form-grid provider-form">
         <label><span>{t('name')}</span><input value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required placeholder={selectedDefinition.label} /></label>
         <label><span>{t('type')}</span><select value={form.type} onChange={(event) => changeType(event.target.value)}>{catalog.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}</select></label>
-        <label><span>{t('model')}</span><input list="provider-models" value={form.defaultModel} onChange={(event) => setForm({ ...form, defaultModel: event.target.value })} autoComplete="off" placeholder="auto" /><datalist id="provider-models">{modelSuggestions.map((model) => <option value={model} key={model} />)}</datalist><small>{language === 'ar' ? 'اكتب auto للاكتشاف والاختبار التلقائي.' : 'Use auto for automatic discovery and probing.'}</small></label>
-        <label><span>{t('baseUrl')}</span><input inputMode="url" value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} required={selectedDefinition.baseUrlRequired} placeholder={selectedDefinition.defaultBaseUrl ?? 'https://api.example.com/v1'} /><small>{language === 'ar' ? 'يقبل الرابط بدون https أو رابط endpoint كامل ويصححه تلقائيًا.' : 'Accepts a host without https or a full endpoint and normalizes it.'}</small></label>
-        <label className="span-2"><span>{t('apiKey')}</span><input type="password" autoComplete="new-password" value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} placeholder={editingId ? (language === 'ar' ? 'اتركه فارغًا للاحتفاظ بالمفتاح الحالي' : 'Leave blank to keep the current key') : ''} required={!editingId && selectedDefinition.apiKeyRequired} /></label>
+        <label><span>{language === 'ar' ? 'البروتوكول' : 'Protocol'}</span><select value={form.protocol} onChange={(event) => setForm({ ...form, protocol: event.target.value as ProviderProtocol })}><option value="openai">OpenAI</option><option value="openai-compatible">OpenAI-compatible</option><option value="anthropic">Anthropic</option><option value="gemini">Gemini</option></select></label>
+        <label><span>{t('baseUrl')}</span><input inputMode="url" value={form.baseUrl} onChange={(event) => setForm({ ...form, baseUrl: event.target.value })} required={selectedDefinition.baseUrlRequired || form.protocol === 'openai-compatible'} placeholder="https://router.bynara.id/v1" /></label>
+        <label className="span-2"><span>{t('apiKey')}</span><input type="password" autoComplete="new-password" value={form.apiKey} onChange={(event) => setForm({ ...form, apiKey: event.target.value })} placeholder={editingId ? (language === 'ar' ? 'اتركه فارغًا للاحتفاظ بالمفتاح الحالي' : 'Leave blank to keep the current key') : ''} required={!editingId && selectedDefinition.apiKeyRequired} />{editingId && <small>{language === 'ar' ? 'لن يُعاد عرض المفتاح المحفوظ، ولن يُرسل الـmask إلى الخادم.' : 'The saved key is never returned, and its mask is never submitted as a credential.'}</small>}</label>
+        <label className="span-2"><span>{language === 'ar' ? 'Custom headers (JSON اختياري)' : 'Custom headers (optional JSON)'}</span><textarea rows={3} value={form.customHeaders} onChange={(event) => setForm({ ...form, customHeaders: event.target.value })} placeholder={'{"HTTP-Referer":"https://example.com","X-Title":"Moataz AI"}'} />{editingId && providers.find((provider) => provider.id === editingId)?.has_custom_headers && <small>{language === 'ar' ? 'توجد Headers مشفرة محفوظة. اترك الحقل فارغًا لمسحها أو أعد إدخالها لاستبدالها.' : 'Encrypted headers are saved. Leave this field empty to clear them, or re-enter them to replace them.'}</small>}</label>
+        <label><span>{t('model')}</span><input list="provider-models" value={form.defaultModel} onChange={(event) => setForm({ ...form, defaultModel: event.target.value })} autoComplete="off" placeholder={language === 'ar' ? 'Model ID فعلي' : 'Actual model ID'} /><datalist id="provider-models">{modelSuggestions.map((model) => <option value={model} key={model} />)}</datalist><small>{language === 'ar' ? 'لا تستخدم auto؛ اختر قيمة id من /models أو أدخلها يدويًا.' : 'Do not use auto; select an id from /models or enter it manually.'}</small></label>
+        <label className="checkbox-row"><input type="checkbox" checked={form.streamingEnabled} onChange={(event) => setForm({ ...form, streamingEnabled: event.target.checked })} /><span>{language === 'ar' ? 'تفعيل Streaming بعد نجاح الاتصال' : 'Enable streaming after connection succeeds'}</span></label>
         <div className="form-actions span-2 provider-actions">
           <button type="button" className="ghost" onClick={() => { void discoverDraftModels(); }} disabled={busy !== null || !canCallDraft}><SpinnerLabel active={busy === 'models'} activeText={language === 'ar' ? 'جارٍ الاكتشاف…' : 'Discovering…'} idleText={language === 'ar' ? 'اكتشاف النماذج' : 'Discover models'} /></button>
-          <button type="button" className="secondary" onClick={() => { void testDraft(); }} disabled={busy !== null || !canCallDraft}><SpinnerLabel active={busy === 'test'} activeText={t('testing')} idleText={language === 'ar' ? 'فحص ذكي دون حفظ' : 'Smart test without saving'} /></button>
-          <button type="submit" disabled={busy !== null}><SpinnerLabel active={busy === 'save'} activeText={language === 'ar' ? 'جارٍ الحفظ واختيار نموذج…' : 'Saving and selecting model…'} idleText={language === 'ar' ? 'حفظ وفحص تلقائي' : 'Save & auto-verify'} /></button>
+          <button type="button" className="secondary" onClick={() => { void testDraft(); }} disabled={busy !== null || !canCallDraft || !form.defaultModel.trim()}><SpinnerLabel active={busy === 'test'} activeText={t('testing')} idleText={language === 'ar' ? 'اختبار الاستدلال' : 'Test inference'} /></button>
+          <button type="submit" disabled={busy !== null || !form.defaultModel.trim()}><SpinnerLabel active={busy === 'save'} activeText={language === 'ar' ? 'جارٍ الحفظ والفحص…' : 'Saving and verifying…'} idleText={language === 'ar' ? 'حفظ وفحص' : 'Save & verify'} /></button>
         </div>
       </form>
-      <div className="provider-capability-note"><strong>{selectedDefinition.adapter}</strong><span>{selectedDefinition.label}</span>{selectedDefinition.modelExamples.length > 0 && <code>{selectedDefinition.modelExamples.join(' · ')}</code>}</div>
+      <div className="provider-capability-note"><strong>{form.protocol}</strong><span>{selectedDefinition.label}</span><code>{form.baseUrl || '—'}</code></div>
     </section>
     {diagnostic && <DiagnosticCard diagnostic={diagnostic} language={language} />}
     <section className="panel">
       <div className="section-heading"><div><h2>{t('configuredProviders')}</h2><p>{language === 'ar' ? `${providers.filter((item) => item.validation_status === 'verified').length} جاهز من ${providers.length}` : `${providers.filter((item) => item.validation_status === 'verified').length} ready of ${providers.length}`}</p></div><button type="button" className="ghost" onClick={() => { void load(); }}>{t('refresh')}</button></div>
       {providers.length === 0 ? <EmptyState title={t('noProviders')} /> : <div className="resource-list provider-list">{providers.map((provider) => <article className={`resource-card provider-resource ${provider.validation_status}`} key={provider.id}>
-        <div className="resource-main"><div className="resource-title"><strong>{provider.name}</strong><StatusBadge status={provider.validation_status} t={t} /></div><p>{provider.type} · {provider.default_model}</p><small>{provider.base_url || 'Default endpoint'}</small>{provider.validation_error_code && <code>{provider.validation_error_code}</code>}{provider.validated_at && <small>{language === 'ar' ? 'آخر فحص: ' : 'Last checked: '}{new Date(provider.validated_at).toLocaleString(language === 'ar' ? 'ar' : 'en')}</small>}</div>
-        <div className="resource-actions"><button type="button" className="ghost" onClick={() => { void discoverSavedModels(provider); }} disabled={busy !== null}><SpinnerLabel active={busy === `models-${provider.id}`} activeText={language === 'ar' ? 'اكتشاف…' : 'Discovering…'} idleText={language === 'ar' ? 'النماذج' : 'Models'} /></button><button type="button" className="secondary" onClick={() => { void testSaved(provider.id); }} disabled={busy !== null}><SpinnerLabel active={busy === `test-${provider.id}`} activeText={t('testing')} idleText={language === 'ar' ? 'إصلاح وفحص' : 'Repair & diagnose'} /></button><button type="button" className="ghost" onClick={() => edit(provider)}>{t('edit')}</button><button type="button" className="danger ghost" onClick={() => { void remove(provider.id); }} disabled={busy !== null}>{t('delete')}</button></div>
+        <div className="resource-main"><div className="resource-title"><strong>{provider.name}</strong><StatusBadge status={provider.validation_status} t={t} /></div><p>{provider.type} · {provider.protocol} · <code>{provider.default_model || '—'}</code></p><small>{provider.base_url || 'Default endpoint'}</small>{provider.key_mask && <small>{language === 'ar' ? 'المفتاح: ' : 'Key: '}{provider.key_mask}</small>}{provider.validation_error_code && <code>{provider.validation_error_code}</code>}{provider.last_error_message && <small>{provider.last_error_message}</small>}{provider.validated_at && <small>{language === 'ar' ? 'آخر فحص: ' : 'Last checked: '}{new Date(provider.validated_at).toLocaleString(language === 'ar' ? 'ar' : 'en')}</small>}</div>
+        <div className="resource-actions"><button type="button" className="ghost" onClick={() => { void discoverSavedModels(provider); }} disabled={busy !== null}><SpinnerLabel active={busy === `models-${provider.id}`} activeText={language === 'ar' ? 'اكتشاف…' : 'Discovering…'} idleText={language === 'ar' ? 'النماذج' : 'Models'} /></button><button type="button" className="secondary" onClick={() => { void testSaved(provider.id); }} disabled={busy !== null}><SpinnerLabel active={busy === `test-${provider.id}`} activeText={t('testing')} idleText={language === 'ar' ? 'فحص' : 'Test'} /></button><button type="button" className="ghost" onClick={() => edit(provider)}>{t('edit')}</button><button type="button" className="danger ghost" onClick={() => { void remove(provider.id); }} disabled={busy !== null}>{t('delete')}</button></div>
       </article>)}</div>}
     </section>
   </div>;

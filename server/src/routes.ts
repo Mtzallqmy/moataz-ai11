@@ -2,7 +2,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { z } from 'zod';
 import { query, get, run, cryptoId, transaction, ping, getMigrationStatus, type DbRow } from './db.js';
 import { decrypt, encrypt } from './crypto.js';
-import { completeAgentStep, diagnoseProviderConnection, listProviderModels, LLMError, type LLMToolSpec, type Msg, type Provider } from './llm.js';
+import { completeAgentStep, diagnoseProviderConnection, listProviderModels, LLMError, streamProviderCompletion, type LLMToolSpec, type Msg, type Provider } from './llm.js';
 import { runTool, toolCatalog, toolRegistry, type IntegrationCredential } from './tools.js';
 import { auth, type AuthRequest } from './auth.js';
 import { config } from './config.js';
@@ -16,7 +16,9 @@ import { appVersion } from './version.js';
 import { upstreamAppError } from './upstream-errors.js';
 import { assertProviderCredentials, providerCatalog, resolveProviderBaseUrl } from './providers.js';
 import { providerErrorWithDiagnostic } from './provider-diagnostics.js';
-import { getProviderDefinition, normalizeProviderUrls } from './providers/index.js';
+import { getProviderDefinition, normalizeProviderConfig, normalizeProviderUrls } from './providers/index.js';
+import { clearProviderModelCacheForProvider } from './providers/model-cache.js';
+import type { ProviderProtocol, ProviderStreamEvent } from './providers/types.js';
 import type { ProviderDiagnosticResult } from './providers/types.js';
 import { fetchWithValidatedRedirects, readLimitedText } from './network.js';
 import type { TelegramStatus } from './telegram.js';
@@ -24,38 +26,60 @@ import { attachmentContext, attachmentsForChat, deletePendingAttachment, pending
 import { runMultiAgent } from './multi-agent.js';
 
 const providerTypeSchema = z.string().trim().toLowerCase().regex(/^[a-z0-9_-]{2,40}$/);
+const providerProtocolSchema = z.enum(['openai', 'openai-compatible', 'anthropic', 'gemini']);
+const customHeadersSchema = z.record(z.string().max(2000)).refine((value) => JSON.stringify(value).length <= 8192, { message: 'Custom headers are too large.' }).optional().default({});
 const optionalBaseUrlSchema = z.preprocess(
   (value) => typeof value === 'string' && value.trim() === '' ? undefined : value,
   z.string().trim().max(2048).optional()
 );
 
+const optionalConcreteModelSchema = z.string().trim().max(200).refine(
+  (value) => !value || !/^(auto|default|free|latest)$/i.test(value),
+  { message: 'Use an actual provider model ID instead of a placeholder.' }
+);
+
+const concreteModelSchema = z.string().trim().min(1).max(200).refine(
+  (value) => !/^(auto|default|free|latest)$/i.test(value),
+  { message: 'Use an actual provider model ID instead of a placeholder.' }
+);
+
 const providerSchema = z.object({
   name: z.string().trim().min(1).max(100),
   type: providerTypeSchema,
+  protocol: providerProtocolSchema.optional(),
   baseUrl: optionalBaseUrlSchema,
-  apiKey: z.string().trim().max(20_000).default(''),
-  defaultModel: z.string().trim().min(1).max(200)
+  apiKey: z.string().max(20_000).default(''),
+  defaultModel: optionalConcreteModelSchema.default(''),
+  customHeaders: customHeadersSchema,
+  streamingEnabled: z.boolean().default(true)
 }).strict();
 
 const providerUpdateSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   type: providerTypeSchema.optional(),
+  protocol: providerProtocolSchema.optional(),
   baseUrl: optionalBaseUrlSchema,
-  apiKey: z.string().trim().min(1).max(20_000).optional(),
-  defaultModel: z.string().trim().min(1).max(200).optional()
+  apiKey: z.string().max(20_000).optional(),
+  defaultModel: optionalConcreteModelSchema.optional(),
+  customHeaders: customHeadersSchema.optional(),
+  streamingEnabled: z.boolean().optional()
 }).strict().refine((value) => Object.keys(value).length > 0, { message: 'At least one field is required.' });
 
 const providerTestSchema = z.object({
   type: providerTypeSchema,
+  protocol: providerProtocolSchema.optional(),
   baseUrl: optionalBaseUrlSchema,
-  apiKey: z.string().trim().max(20_000).default(''),
-  model: z.string().trim().max(200).optional().default('auto')
+  apiKey: z.string().max(20_000).default(''),
+  model: optionalConcreteModelSchema.optional().default(''),
+  customHeaders: customHeadersSchema
 }).strict();
 
 const providerModelsSchema = z.object({
   type: providerTypeSchema,
+  protocol: providerProtocolSchema.optional(),
   baseUrl: optionalBaseUrlSchema,
-  apiKey: z.string().trim().max(20_000).default('')
+  apiKey: z.string().max(20_000).default(''),
+  customHeaders: customHeadersSchema
 }).strict();
 
 const integrationTypeSchema = z.enum(['github', 'telegram', 'brave_search', 'tavily', 'sandbox']);
@@ -83,21 +107,24 @@ const integrationTestSchema = z.object({
 const chatSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   providerId: uuidSchema.nullish(),
-  model: z.string().trim().min(1).max(200).nullish(),
+  model: concreteModelSchema.nullish(),
   mode: z.enum(['chat', 'agent', 'multi-agent']).default('agent')
 }).strict();
 
 const chatUpdateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   providerId: uuidSchema.nullish(),
-  model: z.string().trim().min(1).max(200).nullish(),
+  model: concreteModelSchema.nullish(),
   mode: z.enum(['chat', 'agent', 'multi-agent']).optional()
 }).strict().refine((value) => Object.keys(value).length > 0, { message: 'At least one field is required.' });
 
 const messageSchema = z.object({
   content: z.string().trim().max(config.maxMessageChars).default(''),
   attachmentIds: z.array(uuidSchema).max(config.maxAttachmentsPerMessage).default([]),
-  idempotencyKey: z.string().trim().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/).optional()
+  idempotencyKey: z.string().trim().min(8).max(128).regex(/^[A-Za-z0-9._:-]+$/).optional(),
+  providerId: uuidSchema.optional(),
+  model: concreteModelSchema.optional(),
+  stream: z.boolean().default(false)
 }).strict().refine((value) => value.content.length > 0 || value.attachmentIds.length > 0, {
   message: 'A message or at least one attachment is required.'
 });
@@ -119,11 +146,17 @@ type ProviderRow = DbRow & {
   user_id: string;
   name: string;
   type: string;
+  protocol: ProviderProtocol;
   base_url: string | null;
   api_key_enc: string;
+  key_last_four: string | null;
+  custom_headers_enc: string | null;
+  credential_version: number;
+  streaming_enabled: number | boolean;
   default_model: string;
   validation_status: string;
   validation_error_code: string | null;
+  last_error_message: string | null;
   validated_at: string | null;
 };
 
@@ -153,6 +186,7 @@ type MessageRow = DbRow & {
   chat_id: string;
   role: string;
   content: string;
+  status: string;
   tool_calls: unknown;
   idempotency_key: string | null;
   created_at: string;
@@ -189,20 +223,131 @@ export function categorizeProviderError(message: string): { stage: string; sugge
   return { stage, suggestion: suggestions[stage] ?? suggestions.unknown! };
 }
 
+function decryptHeaders(value: string | null): Record<string, string> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(decrypt(value)) as unknown;
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, string> : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeProviderStorage(input: {
+  type: string;
+  protocol?: ProviderProtocol | undefined;
+  apiKey: string;
+  baseUrl?: string | null | undefined;
+  defaultModel?: string | null | undefined;
+  customHeaders?: Record<string, string> | undefined;
+  userId?: string | undefined;
+  providerId?: string | undefined;
+  credentialVersion?: number | undefined;
+}) {
+  return normalizeProviderConfig({
+    providerType: input.type,
+    protocol: input.protocol,
+    apiKey: input.apiKey,
+    baseUrl: input.baseUrl,
+    selectedModel: input.defaultModel,
+    customHeaders: input.customHeaders,
+    userId: input.userId,
+    providerId: input.providerId,
+    credentialVersion: input.credentialVersion
+  });
+}
+
+async function persistProviderModels(providerId: string, models: readonly { id: string; name?: string | undefined; capabilities?: unknown | undefined }[], verifiedModel?: string): Promise<void> {
+  await run('DELETE FROM provider_models WHERE provider_id = ?', [providerId]);
+  for (const model of models.slice(0, 1000)) {
+    await run(
+      `INSERT INTO provider_models (provider_id, model_id, display_name, capabilities, discovered_at, last_verified_at)
+       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
+      [providerId, model.id, model.name ?? null, model.capabilities ? JSON.stringify(model.capabilities) : null, model.id === verifiedModel ? new Date().toISOString() : null]
+    );
+  }
+}
+
+async function logProviderRequest(input: {
+  userId: string;
+  providerId: string;
+  protocol: string;
+  baseUrl?: string | null | undefined;
+  endpointPath?: string | undefined;
+  model?: string | undefined;
+  stream?: boolean | undefined;
+  statusCode?: number | undefined;
+  errorType?: string | undefined;
+  latencyMs?: number | undefined;
+  requestId?: string | undefined;
+  upstreamRequestId?: string | undefined;
+  retryCount?: number | undefined;
+}): Promise<void> {
+  let host: string | null = null;
+  let path = input.endpointPath ?? null;
+  if (input.baseUrl) {
+    try {
+      const url = new URL(input.baseUrl);
+      host = url.host;
+      path ??= url.pathname;
+    } catch { host = null; }
+  }
+  await run(
+    `INSERT INTO provider_request_logs
+      (id, user_id, provider_id, protocol, base_url_host, endpoint_path, model, stream, status_code,
+       provider_error_type, latency_ms, retry_count, request_id, upstream_request_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [cryptoId(), input.userId, input.providerId, input.protocol, host, path, input.model ?? null,
+      input.stream ? 1 : 0, input.statusCode ?? null, input.errorType ?? null, input.latencyMs ?? null,
+      input.retryCount ?? 0, input.requestId ?? null, input.upstreamRequestId ?? null]
+  ).catch(() => undefined);
+}
+
+function providerChatEndpointPath(provider: Provider, model: string): string | undefined {
+  if (!provider.baseUrl) return undefined;
+  try {
+    const base = provider.baseUrl.replace(/\/+$/, '');
+    if (provider.protocol === 'anthropic') return new URL(`${base}/v1/messages`).pathname;
+    if (provider.protocol === 'gemini') return new URL(`${base}/v1beta/models/${encodeURIComponent(model)}:generateContent`).pathname;
+    return new URL(`${base}/chat/completions`).pathname;
+  } catch {
+    return undefined;
+  }
+}
+
+function keyLastFour(apiKey: string): string | null {
+  const value = apiKey.trim();
+  return value ? value.slice(-4) : null;
+}
+
+function keyMask(lastFour: string | null): string | null {
+  return lastFour ? `••••••••••••${lastFour}` : null;
+}
+
+function encryptHeaders(headers: Record<string, string>): string | null {
+  return Object.keys(headers).length ? encrypt(JSON.stringify(headers)) : null;
+}
+
 function providerFromRow(row: ProviderRow): Provider {
+  const customHeaders = decryptHeaders(row.custom_headers_enc);
   return {
     type: row.type,
+    protocol: row.protocol,
     apiKey: decrypt(row.api_key_enc),
     ...(row.base_url ? { baseUrl: row.base_url } : {}),
     defaultModel: row.default_model,
-    name: row.name
+    name: row.name,
+    userId: row.user_id,
+    providerId: row.id,
+    credentialVersion: Number(row.credential_version || 1),
+    ...(Object.keys(customHeaders).length ? { customHeaders } : {})
   };
 }
 
 async function providerRowForUser(userId: string, id: string): Promise<ProviderRow | undefined> {
   return get<ProviderRow>(
-    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
-            validation_status, validation_error_code, validated_at
+    `SELECT id, user_id, name, type, protocol, base_url, api_key_enc, key_last_four, custom_headers_enc, credential_version, streaming_enabled, default_model,
+            validation_status, validation_error_code, last_error_message, validated_at
      FROM providers WHERE id = ? AND user_id = ? AND is_active = 1`,
     [id, userId]
   );
@@ -218,39 +363,48 @@ function assertProviderVerified(row: ProviderRow): void {
   }
 }
 
-async function providerForUser(userId: string, id?: string): Promise<Provider> {
-  if (id) {
-    const exact = await providerRowForUser(userId, id);
-    if (!exact) throw new AppError('provider_required', 409, 'The selected provider is unavailable.', { reason: 'selected_provider_unavailable', providerId: id });
-    assertProviderVerified(exact);
-    return providerFromRow(exact);
-  }
-  const rows = await query<ProviderRow>(
-    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
-            validation_status, validation_error_code, validated_at
-     FROM providers WHERE user_id = ? AND is_active = 1 AND validation_status = 'verified' ORDER BY created_at DESC`,
-    [userId]
-  );
-  if (rows.length === 0) throw new AppError('provider_not_verified', 409, 'Configure and verify an AI provider before sending messages.', { reason: 'none_verified' });
-  if (rows.length > 1) throw new AppError('provider_required', 409, 'Select a provider for this conversation.', { reason: 'selection_required' });
-  return providerFromRow(rows[0]!);
-}
 
-async function resolveProviderForChat(userId: string, chat: ChatRow): Promise<Provider> {
-  if (chat.provider_id) return providerForUser(userId, chat.provider_id);
-  const rows = await query<ProviderRow>(
-    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
-            validation_status, validation_error_code, validated_at
-     FROM providers WHERE user_id = ? AND is_active = 1 AND validation_status = 'verified' ORDER BY created_at DESC`,
-    [userId]
-  );
-  if (rows.length === 0) throw new AppError('provider_not_verified', 409, 'Configure and verify an AI provider before sending messages.', { reason: 'none_verified' });
-  if (rows.length > 1) throw new AppError('provider_required', 409, 'Select a provider for this conversation.', { reason: 'selection_required' });
-  const selected = rows[0]!;
-  await run('UPDATE chats SET provider_id = ?, model = COALESCE(model, ?), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [selected.id, selected.default_model, chat.id, userId]);
-  chat.provider_id = selected.id;
-  if (!chat.model) chat.model = selected.default_model;
-  return providerFromRow(selected);
+
+async function resolveMessageProvider(
+  userId: string,
+  chat: ChatRow,
+  requestedProviderId?: string,
+  requestedModel?: string
+): Promise<{ provider: Provider; row: ProviderRow; model: string }> {
+  let providerId = requestedProviderId ?? chat.provider_id ?? undefined;
+  let row: ProviderRow | undefined;
+  if (providerId) row = await providerRowForUser(userId, providerId);
+  if (!row) {
+    const rows = await query<ProviderRow>(
+      `SELECT id, user_id, name, type, protocol, base_url, api_key_enc, key_last_four, custom_headers_enc,
+              credential_version, streaming_enabled, default_model, validation_status, validation_error_code,
+              last_error_message, validated_at
+       FROM providers WHERE user_id = ? AND is_active = 1 AND validation_status = 'verified' ORDER BY created_at DESC`,
+      [userId]
+    );
+    if (providerId) throw new AppError('provider_not_found', 404, 'The selected provider is unavailable.');
+    if (rows.length === 0) throw new AppError('provider_not_verified', 409, 'Configure and verify a provider before sending messages.');
+    if (rows.length > 1) throw new AppError('provider_required', 409, 'Select a provider for this conversation.');
+    row = rows[0]!;
+    providerId = row.id;
+  }
+  assertProviderVerified(row);
+  const selectedProviderId = row.id;
+  const model = requestedModel?.trim()
+    || (selectedProviderId === chat.provider_id ? chat.model?.trim() : '')
+    || row.default_model.trim();
+  if (!model || /^(auto|default|free|latest)$/i.test(model)) {
+    throw new AppError('provider_model_required', 422, 'Select a concrete model ID discovered for this provider.');
+  }
+  if (chat.provider_id !== selectedProviderId || chat.model !== model) {
+    await run(
+      'UPDATE chats SET provider_id = ?, model = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+      [selectedProviderId, model, chat.id, userId]
+    );
+    chat.provider_id = selectedProviderId;
+    chat.model = model;
+  }
+  return { provider: providerFromRow(row), row, model };
 }
 
 function safeMeta(value: string | null): Record<string, unknown> {
@@ -291,9 +445,11 @@ function providerInput(input: z.infer<typeof providerTestSchema>, name = 'Connec
   assertProviderCredentials(input.type, apiKey, baseUrl);
   return {
     type: input.type,
+    ...(input.protocol ? { protocol: input.protocol } : {}),
     apiKey,
     ...(baseUrl ? { baseUrl } : {}),
-    defaultModel: input.model ?? 'auto',
+    defaultModel: input.model ?? '',
+    customHeaders: input.customHeaders ?? {},
     name
   };
 }
@@ -303,27 +459,31 @@ async function validateProvider(input: z.infer<typeof providerTestSchema>): Prom
   model: string;
   models: string[];
   diagnostic: ProviderDiagnosticResult;
+  discovery: Awaited<ReturnType<typeof diagnoseProviderConnection>>['discovery'];
 }> {
   const provider = providerInput(input);
-  const preferredModel = input.model ?? 'auto';
+  const preferredModel = input.model ?? '';
   const result = await diagnoseProviderConnection(provider, preferredModel);
   return {
     message: result.message,
     model: result.model,
     models: result.models,
-    diagnostic: result.diagnostic
+    diagnostic: result.diagnostic,
+    discovery: result.discovery
   };
 }
 
-function modelDiscoveryProvider(input: { type: string; apiKey: string | undefined; baseUrl: unknown }): Provider {
+function modelDiscoveryProvider(input: { type: string; protocol?: ProviderProtocol | undefined; apiKey: string | undefined; baseUrl: unknown; customHeaders?: Record<string, string> | undefined }): Provider {
   const apiKey = input.apiKey ?? '';
   const baseUrl = resolveProviderBaseUrl(input.type, typeof input.baseUrl === 'string' ? input.baseUrl : undefined);
   assertProviderCredentials(input.type, apiKey, baseUrl);
   return {
     type: input.type,
+    ...(input.protocol ? { protocol: input.protocol } : {}),
     apiKey,
     ...(baseUrl ? { baseUrl } : {}),
-    defaultModel: 'auto',
+    defaultModel: '',
+    ...(input.customHeaders ? { customHeaders: input.customHeaders } : {}),
     name: 'Model discovery'
   };
 }
@@ -486,6 +646,7 @@ function normalizedMessage(row: MessageRow, attachments: readonly AttachmentSumm
     chat_id: row.chat_id,
     role: row.role,
     content: row.content,
+    status: row.status,
     tool_calls: parseToolCalls(row.tool_calls),
     attachments,
     idempotency_key: row.idempotency_key,
@@ -512,8 +673,7 @@ function errorCode(error: unknown): string {
 
 
 const recoverableModelCodes = new Set([
-  'provider_model_not_found', 'provider_authorization', 'provider_billing',
-  'provider_invalid_request', 'provider_empty_response'
+  'provider_model_not_found', 'provider_model_unavailable'
 ]);
 
 async function completeWithModelRecovery(input: {
@@ -525,11 +685,53 @@ async function completeWithModelRecovery(input: {
   model?: string;
   tools?: readonly LLMToolSpec[];
 }) {
+  const invoke = async (model: string) => {
+    const started = Date.now();
+    try {
+      const step = await completeAgentStep(input.provider, input.messages, model, input.tools ?? []);
+      if (input.providerId) await logProviderRequest({
+        userId: input.userId,
+        providerId: input.providerId,
+        protocol: input.provider.protocol ?? getProviderDefinition(input.provider.type).protocol,
+        baseUrl: input.provider.baseUrl,
+        endpointPath: providerChatEndpointPath(input.provider, model),
+        model,
+        stream: false,
+        statusCode: 200,
+        latencyMs: Date.now() - started,
+        retryCount: step.retryCount,
+        requestId: step.requestId
+      });
+      return step;
+    } catch (error) {
+      const normalized = providerErrorWithDiagnostic(input.provider.type, error);
+      const diagnostic = normalized.details && typeof normalized.details === 'object' && !Array.isArray(normalized.details)
+        ? (normalized.details as Record<string, unknown>).diagnostic as ProviderDiagnosticResult | undefined
+        : undefined;
+      if (input.providerId) await logProviderRequest({
+        userId: input.userId,
+        providerId: input.providerId,
+        protocol: input.provider.protocol ?? getProviderDefinition(input.provider.type).protocol,
+        baseUrl: input.provider.baseUrl,
+        endpointPath: diagnostic?.testedEndpoint ? new URL(diagnostic.testedEndpoint).pathname : providerChatEndpointPath(input.provider, model),
+        model,
+        stream: false,
+        statusCode: diagnostic?.httpStatus,
+        errorType: diagnostic?.errorType ?? diagnostic?.status,
+        latencyMs: Date.now() - started,
+        requestId: diagnostic?.requestId,
+        upstreamRequestId: diagnostic?.upstreamRequestId
+      });
+      throw error;
+    }
+  };
+
+  const initialModel = (input.model ?? input.provider.defaultModel).trim();
   try {
-    return await completeAgentStep(input.provider, input.messages, input.model, input.tools ?? []);
+    return await invoke(initialModel);
   } catch (error) {
     if (!(error instanceof AppError) || !recoverableModelCodes.has(error.code) || !input.providerId) throw error;
-    const probe = await diagnoseProviderConnection(input.provider, input.model ?? input.provider.defaultModel);
+    const probe = await diagnoseProviderConnection(input.provider, initialModel);
     input.provider.defaultModel = probe.model;
     await transaction([
       {
@@ -542,14 +744,14 @@ async function completeWithModelRecovery(input: {
         params: [probe.model, input.chatId, input.userId]
       }
     ]);
-    return completeAgentStep(input.provider, input.messages, probe.model, input.tools ?? []);
+    return invoke(probe.model);
   }
 }
 
 async function multiAgentProviders(userId: string, primaryProviderId: string | null): Promise<Provider[]> {
   const rows = await query<ProviderRow>(
-    `SELECT id, user_id, name, type, base_url, api_key_enc, default_model,
-            validation_status, validation_error_code, validated_at
+    `SELECT id, user_id, name, type, protocol, base_url, api_key_enc, key_last_four, custom_headers_enc, credential_version, streaming_enabled, default_model,
+            validation_status, validation_error_code, last_error_message, validated_at
      FROM providers WHERE user_id = ? AND is_active = 1 AND validation_status = 'verified'
      ORDER BY created_at DESC`,
     [userId]
@@ -569,6 +771,23 @@ function attachmentGroups(rows: readonly AttachmentRow[]): Map<string, Attachmen
     grouped.set(row.message_id, current);
   }
   return grouped;
+}
+
+function sendSse(res: Response, event: string, data: unknown): void {
+  if (res.writableEnded || res.destroyed) return;
+  res.write(`event: ${event}
+data: ${JSON.stringify(data)}
+
+`);
+}
+
+function startSse(res: Response): void {
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
 }
 
 function decodeFileName(value: string | undefined): string {
@@ -655,13 +874,33 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
 
   app.get('/api/providers', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const rows = await query(
-        `SELECT id, name, type, base_url, default_model, validation_status,
-                validation_error_code, validated_at, is_active, created_at, updated_at
+      const rows = await query<ProviderRow & { created_at: string; updated_at: string }>(
+        `SELECT id, user_id, name, type, protocol, base_url, api_key_enc, key_last_four, custom_headers_enc,
+                credential_version, streaming_enabled, default_model, validation_status,
+                validation_error_code, last_error_message, validated_at, created_at, updated_at
          FROM providers WHERE user_id = ? AND is_active = 1 ORDER BY created_at DESC`,
         [req.user!.id]
       );
-      res.json({ providers: rows });
+      res.json({
+        providers: rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          type: row.type,
+          protocol: row.protocol,
+          base_url: row.base_url,
+          default_model: row.default_model,
+          streaming_enabled: Boolean(row.streaming_enabled),
+          key_mask: keyMask(row.key_last_four),
+          has_custom_headers: Boolean(row.custom_headers_enc),
+          credential_version: row.credential_version,
+          validation_status: row.validation_status,
+          validation_error_code: row.validation_error_code,
+          last_error_message: row.last_error_message,
+          validated_at: row.validated_at,
+          created_at: row.created_at,
+          updated_at: row.updated_at
+        }))
+      });
     } catch (error) {
       next(error);
     }
@@ -670,26 +909,43 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
   app.post('/api/providers', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const input = parseInput(providerSchema, req.body);
-      const apiKey = input.apiKey ?? '';
-      const resolvedBaseUrl = resolveProviderBaseUrl(input.type, typeof input.baseUrl === 'string' ? input.baseUrl : undefined);
-      assertProviderCredentials(input.type, apiKey, resolvedBaseUrl);
-      const finalBaseUrl = resolvedBaseUrl ?? null;
       const id = cryptoId();
+      const normalized = normalizeProviderStorage({
+        type: input.type,
+        ...(input.protocol ? { protocol: input.protocol } : {}),
+        apiKey: input.apiKey ?? '',
+        baseUrl: typeof input.baseUrl === 'string' ? input.baseUrl : undefined,
+        defaultModel: input.defaultModel,
+        customHeaders: input.customHeaders ?? {},
+        userId: req.user!.id,
+        providerId: id,
+        credentialVersion: 1
+      });
+      const headers = { ...normalized.customHeaders };
       await run(
         `INSERT INTO providers
-          (id, user_id, name, type, base_url, api_key_enc, default_model, validation_status, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-        [id, req.user!.id, input.name, input.type, finalBaseUrl, encrypt(apiKey), input.defaultModel, 'untested']
+          (id, user_id, name, type, protocol, base_url, api_key_enc, key_last_four, custom_headers_enc,
+           credential_version, streaming_enabled, default_model, validation_status, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'untested', CURRENT_TIMESTAMP)`,
+        [id, req.user!.id, input.name, input.type, normalized.protocol, normalized.normalizedBaseUrl,
+          encrypt(normalized.apiKey), keyLastFour(normalized.apiKey), encryptHeaders(headers),
+          input.streamingEnabled ? 1 : 0, input.defaultModel]
       );
       res.status(201).json({
         provider: {
           id,
           name: input.name,
           type: input.type,
-          base_url: finalBaseUrl,
+          protocol: normalized.protocol,
+          base_url: normalized.normalizedBaseUrl,
           default_model: input.defaultModel,
+          streaming_enabled: input.streamingEnabled,
+          key_mask: keyMask(keyLastFour(normalized.apiKey)),
+          has_custom_headers: Object.keys(headers).length > 0,
+          credential_version: 1,
           validation_status: 'untested',
           validation_error_code: null,
+          last_error_message: null,
           validated_at: null
         }
       });
@@ -704,26 +960,71 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       const input = parseInput(providerUpdateSchema, req.body);
       const existing = await providerRowForUser(req.user!.id, id);
       if (!existing) throw new AppError('provider_not_found', 404);
+
       const type = input.type ?? existing.type;
+      const protocol = input.protocol ?? existing.protocol;
+      const typeOrProtocolChanged = type !== existing.type || protocol !== existing.protocol;
       const baseUrlWasProvided = Object.prototype.hasOwnProperty.call(req.body ?? {}, 'baseUrl');
-      const typeChanged = type !== existing.type;
-      const baseUrl = baseUrlWasProvided
-        ? resolveProviderBaseUrl(type, typeof input.baseUrl === 'string' ? input.baseUrl : undefined) ?? null
-        : typeChanged
-          ? resolveProviderBaseUrl(type, undefined) ?? null
+      const baseCandidate: string | null | undefined = baseUrlWasProvided
+        ? typeof input.baseUrl === 'string' ? input.baseUrl : null
+        : typeOrProtocolChanged
+          ? undefined
           : existing.base_url;
-      const effectiveApiKey = input.apiKey ?? decrypt(existing.api_key_enc);
-      assertProviderCredentials(type, effectiveApiKey, baseUrl ?? undefined);
-      const apiKeyEnc = input.apiKey !== undefined ? encrypt(input.apiKey) : existing.api_key_enc;
+      const suppliedKey = input.apiKey?.trim();
+      const effectiveApiKey = suppliedKey ? input.apiKey! : decrypt(existing.api_key_enc);
+      const customHeadersWereProvided = Object.prototype.hasOwnProperty.call(req.body ?? {}, 'customHeaders');
+      const effectiveHeaders = customHeadersWereProvided ? input.customHeaders ?? {} : decryptHeaders(existing.custom_headers_enc);
+      const defaultModel = input.defaultModel ?? existing.default_model;
+      const credentialVersion = existing.credential_version + 1;
+      const normalized = normalizeProviderStorage({
+        type,
+        protocol,
+        apiKey: effectiveApiKey,
+        baseUrl: baseCandidate,
+        defaultModel,
+        customHeaders: effectiveHeaders,
+        userId: req.user!.id,
+        providerId: id,
+        credentialVersion
+      });
+      const normalizedHeaders = { ...normalized.customHeaders };
+      const connectionChanged = Boolean(suppliedKey)
+        || typeOrProtocolChanged
+        || normalized.normalizedBaseUrl !== existing.base_url
+        || JSON.stringify(normalizedHeaders) !== JSON.stringify(decryptHeaders(existing.custom_headers_enc));
+      const finalCredentialVersion = connectionChanged ? credentialVersion : existing.credential_version;
+
+      const validationStatus = connectionChanged ? 'untested' : existing.validation_status;
+      const validationErrorCode = connectionChanged ? null : existing.validation_error_code;
+      const lastErrorMessage = connectionChanged ? null : existing.last_error_message;
+      const validatedAt = connectionChanged ? null : existing.validated_at;
       await run(
         `UPDATE providers
-         SET name = ?, type = ?, base_url = ?, api_key_enc = ?, default_model = ?,
-             validation_status = 'untested', validation_error_code = NULL,
-             validated_at = NULL, updated_at = CURRENT_TIMESTAMP
+         SET name = ?, type = ?, protocol = ?, base_url = ?, api_key_enc = ?, key_last_four = ?,
+             custom_headers_enc = ?, credential_version = ?, streaming_enabled = ?, default_model = ?,
+             validation_status = ?, validation_error_code = ?, last_error_message = ?,
+             validated_at = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND user_id = ? AND is_active = 1`,
-        [input.name ?? existing.name, type, baseUrl, apiKeyEnc, input.defaultModel ?? existing.default_model, id, req.user!.id]
+        [input.name ?? existing.name, type, normalized.protocol, normalized.normalizedBaseUrl,
+          suppliedKey ? encrypt(normalized.apiKey) : existing.api_key_enc,
+          suppliedKey ? keyLastFour(normalized.apiKey) : existing.key_last_four,
+          encryptHeaders(normalizedHeaders), finalCredentialVersion,
+          input.streamingEnabled === undefined ? (existing.streaming_enabled ? 1 : 0) : input.streamingEnabled ? 1 : 0,
+          defaultModel, validationStatus, validationErrorCode, lastErrorMessage, validatedAt, id, req.user!.id]
       );
-      res.json({ ok: true, id, validation_status: 'untested' });
+      if (connectionChanged) {
+        clearProviderModelCacheForProvider(id);
+        await run('DELETE FROM provider_models WHERE provider_id = ?', [id]);
+      }
+      res.json({
+        ok: true,
+        id,
+        validation_status: validationStatus,
+        protocol: normalized.protocol,
+        base_url: normalized.normalizedBaseUrl,
+        key_mask: keyMask(suppliedKey ? keyLastFour(normalized.apiKey) : existing.key_last_four),
+        credential_version: finalCredentialVersion
+      });
     } catch (error) {
       next(error);
     }
@@ -761,6 +1062,8 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
         type: input.type,
         apiKey: input.apiKey ?? '',
         model: input.model ?? '',
+        customHeaders: input.customHeaders ?? {},
+        ...(input.protocol ? { protocol: input.protocol } : {}),
         ...(typeof input.baseUrl === 'string' ? { baseUrl: input.baseUrl } : {})
       });
       res.json({
@@ -770,6 +1073,7 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
         responsePreview: result.message,
         models: result.models,
         diagnostic: result.diagnostic,
+        discovery: result.discovery,
         stages: { url: 'passed', network: 'passed', authentication: 'passed', model: 'passed', completion: 'passed' }
       });
     } catch (error) {
@@ -780,8 +1084,9 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
   const discoverModelsHandler = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
     try {
       const input = parseInput(providerModelsSchema, req.body);
-      const result = await listProviderModels(modelDiscoveryProvider({ type: input.type, apiKey: input.apiKey, baseUrl: input.baseUrl }));
-      res.json({ success: true, ...result, recommendedModel: null });
+      const provider = modelDiscoveryProvider({ type: input.type, protocol: input.protocol, apiKey: input.apiKey, baseUrl: input.baseUrl, customHeaders: input.customHeaders });
+      const discovery = await listProviderModels(provider);
+      res.json({ success: true, ...discovery, modelsDetailed: discovery.discovery?.models ?? [], recommendedModel: null });
     } catch (error) {
       next(error);
     }
@@ -796,7 +1101,8 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       const row = await providerRowForUser(req.user!.id, id);
       if (!row) throw new AppError('provider_not_found', 404);
       const result = await listProviderModels(providerFromRow(row));
-      res.json({ success: true, ...result, recommendedModel: null });
+      if (result.discovery?.status === 'supported') await persistProviderModels(id, result.discovery.models);
+      res.json({ success: true, ...result, modelsDetailed: result.discovery?.models ?? [], recommendedModel: null });
     } catch (error) {
       next(error);
     }
@@ -816,11 +1122,27 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
         type: row.type,
         apiKey: decrypt(row.api_key_enc),
         model: row.default_model,
+        protocol: row.protocol,
+        customHeaders: decryptHeaders(row.custom_headers_enc),
         ...(row.base_url ? { baseUrl: row.base_url } : {})
+      });
+      await persistProviderModels(id, result.discovery.models, result.model);
+      await logProviderRequest({
+        userId: req.user!.id,
+        providerId: id,
+        protocol: row.protocol,
+        baseUrl: row.base_url,
+        endpointPath: result.diagnostic.testedEndpoint ? new URL(result.diagnostic.testedEndpoint).pathname : undefined,
+        model: result.model,
+        statusCode: result.diagnostic.httpStatus ?? 200,
+        errorType: result.diagnostic.errorType,
+        latencyMs: result.diagnostic.latencyMs,
+        requestId: result.diagnostic.requestId,
+        upstreamRequestId: result.diagnostic.upstreamRequestId
       });
       await transaction([
         {
-          sql: `UPDATE providers SET default_model = ?, validation_status = 'verified', validation_error_code = NULL,
+          sql: `UPDATE providers SET default_model = ?, validation_status = 'verified', validation_error_code = NULL, last_error_message = NULL,
                 validated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
           params: [result.model, id, req.user!.id]
         },
@@ -832,12 +1154,23 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       res.json({ ok: true, id, model: result.model, models: result.models, responsePreview: result.message, diagnostic: result.diagnostic, validation_status: 'verified' });
     } catch (error) {
       const code = errorCode(error);
+      const normalizedError = providerErrorWithDiagnostic(providerType, error);
+      const diagnostic = normalizedError.details && typeof normalizedError.details === 'object' && !Array.isArray(normalizedError.details)
+        ? (normalizedError.details as Record<string, unknown>).diagnostic as ProviderDiagnosticResult | undefined
+        : undefined;
       await run(
-        `UPDATE providers SET validation_status = 'failed', validation_error_code = ?,
+        `UPDATE providers SET validation_status = 'failed', validation_error_code = ?, last_error_message = ?,
          validated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`,
-        [code, id, req.user!.id]
+        [code, diagnostic?.userMessage ?? normalizedError.message, id, req.user!.id]
       ).catch(() => undefined);
-      next(providerErrorWithDiagnostic(providerType, error));
+      const row = await providerRowForUser(req.user!.id, id).catch(() => undefined);
+      if (row) await logProviderRequest({
+        userId: req.user!.id, providerId: id, protocol: row.protocol, baseUrl: row.base_url,
+        model: row.default_model, statusCode: diagnostic?.httpStatus,
+        errorType: diagnostic?.errorType ?? diagnostic?.status, latencyMs: diagnostic?.latencyMs,
+        requestId: diagnostic?.requestId, upstreamRequestId: diagnostic?.upstreamRequestId
+      });
+      next(normalizedError);
     }
   };
 
@@ -1089,7 +1422,7 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       if (!chat) throw new AppError('chat_not_found', 404);
       const [messages, attachmentRows] = await Promise.all([
         query<MessageRow>(
-          'SELECT id, chat_id, role, content, tool_calls, idempotency_key, created_at FROM messages WHERE chat_id = ? ORDER BY created_at ASC',
+          'SELECT id, chat_id, role, content, status, tool_calls, idempotency_key, created_at FROM messages WHERE chat_id = ? ORDER BY created_at ASC',
           [id]
         ),
         attachmentsForChat(id, req.user!.id)
@@ -1098,6 +1431,205 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       res.json({ messages: messages.map((message) => normalizedMessage(message, grouped.get(message.id) ?? [])) });
     } catch (error) {
       next(error);
+    }
+  });
+
+  app.post('/api/chats/:id/messages/stream', auth, async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    const chatId = (() => {
+      try { return routeId(req); } catch (error) { next(error); return undefined; }
+    })();
+    if (!chatId) return;
+
+    let locked = false;
+    let runId: string | undefined;
+    let userMessageId: string | undefined;
+    let selected: { provider: Provider; row: ProviderRow; model: string } | undefined;
+    let partialText = '';
+    let streamKey: string | undefined;
+    let requestStarted = Date.now();
+    const controller = new AbortController();
+    const onClose = () => {
+      if (!res.writableEnded) controller.abort(new Error('client_aborted'));
+    };
+    res.on('close', onClose);
+
+    try {
+      const input = parseInput(messageSchema, req.body);
+      const key = idempotencyKey(req, input.idempotencyKey);
+      streamKey = key;
+      const chat = await get<ChatRow>('SELECT * FROM chats WHERE id = ? AND user_id = ?', [chatId, req.user!.id]);
+      if (!chat) throw new AppError('chat_not_found', 404);
+      if (chat.mode !== 'chat') throw new AppError('streaming_chat_mode_required', 409, 'Streaming is available for simple chat mode. Agent tool execution remains buffered.');
+
+      const existingAssistant = await get<MessageRow>(
+        `SELECT id, chat_id, role, content, status, tool_calls, idempotency_key, created_at
+         FROM messages WHERE chat_id = ? AND idempotency_key = ? AND role = 'assistant'`,
+        [chatId, key]
+      );
+      if (existingAssistant) {
+        startSse(res);
+        sendSse(res, 'status', { stage: 'completed', replayed: true });
+        sendSse(res, 'completed', { message: normalizedMessage(existingAssistant), idempotencyKey: key, replayed: true });
+        res.end();
+        return;
+      }
+      const existingUser = await get('SELECT id FROM messages WHERE chat_id = ? AND idempotency_key = ? AND role = ?', [chatId, key, 'user']);
+      if (existingUser) throw new AppError('message_already_processing', 409);
+      if (activeChats.has(chatId)) throw new AppError('chat_busy', 409);
+      activeChats.add(chatId);
+      locked = true;
+
+      selected = await resolveMessageProvider(req.user!.id, chat, input.providerId, input.model);
+      if (!selected.row.streaming_enabled) {
+        throw new AppError('provider_streaming_disabled', 409, 'Streaming is disabled for this provider configuration.');
+      }
+
+      const attachmentIds = input.attachmentIds ?? [];
+      const attachmentRows = await pendingAttachments(attachmentIds, chatId, req.user!.id);
+      const previousRows = await query<{ role: string; content: string }>(
+        'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?',
+        [chatId, config.maxContextMessages]
+      );
+      const contextRows = previousRows.reverse();
+      const attachmentData = await attachmentContext(attachmentRows);
+      const promptContent = `${input.content}${attachmentData.text}`.trim();
+      const messages = buildAgentMessages(
+        contextRows,
+        promptContent,
+        `You are Moataz AI. Reply in the user's language. Do not expose hidden reasoning. Do not request or invoke tools.`
+      );
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage?.role === 'user' && attachmentData.images.length > 0) lastMessage.images = attachmentData.images;
+
+      userMessageId = cryptoId();
+      runId = cryptoId();
+      const displayContent = input.content || `📎 ${attachmentRows.map((row) => row.name).join(', ')}`;
+      await transaction([
+        {
+          sql: 'INSERT INTO messages (id, chat_id, user_id, role, content, status, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          params: [userMessageId, chatId, req.user!.id, 'user', displayContent, 'completed', key]
+        },
+        {
+          sql: 'INSERT INTO agent_runs (id, chat_id, user_id, status, log, started_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
+          params: [runId, chatId, req.user!.id, 'running', JSON.stringify({ mode: 'chat', stream: true })]
+        },
+        ...attachmentIds.map((attachmentId) => ({
+          sql: 'UPDATE attachments SET message_id = ? WHERE id = ? AND chat_id = ? AND user_id = ? AND message_id IS NULL',
+          params: [userMessageId, attachmentId, chatId, req.user!.id]
+        }))
+      ]);
+
+      startSse(res);
+      sendSse(res, 'status', { stage: 'connecting', providerId: selected.row.id, model: selected.model });
+      sendSse(res, 'user_message', {
+        message: { id: userMessageId, role: 'user', content: displayContent, status: 'completed', tool_calls: [], attachments: attachmentRows.map(summarizeAttachment) },
+        idempotencyKey: key
+      });
+      sendSse(res, 'status', { stage: 'waiting_for_model' });
+      requestStarted = Date.now();
+
+      let completed: Extract<ProviderStreamEvent, { type: 'completed' }>['result'] | undefined;
+      let failedDiagnostic: Extract<ProviderStreamEvent, { type: 'error' }>['diagnostic'] | undefined;
+      for await (const event of streamProviderCompletion(selected.provider, messages, selected.model, controller.signal)) {
+        if (event.type === 'text_delta') {
+          partialText += event.text;
+          sendSse(res, 'delta', { text: event.text });
+          continue;
+        }
+        if (event.type === 'tool_call_delta' || event.type === 'tool_call') {
+          sendSse(res, event.type, event);
+          continue;
+        }
+        if (event.type === 'error') {
+          failedDiagnostic = event.diagnostic;
+          break;
+        }
+        completed = event.result;
+      }
+
+      if (failedDiagnostic || !completed) {
+        const diagnostic = failedDiagnostic ?? {
+          success: false, ok: false, stage: 'streaming' as const, status: 'invalid_response' as const,
+          errorType: 'INVALID_RESPONSE', keyValid: null, providerReachable: true, modelAvailable: null,
+          retryable: true, message: 'The provider stream did not complete.',
+          userMessage: 'لم يكتمل بث المزوّد.', userMessageAr: 'لم يكتمل بث المزوّد.',
+          userMessageEn: 'The provider stream did not complete.'
+        };
+        throw new AppError(`provider_${diagnostic.status}`, diagnostic.httpStatus ?? 502, diagnostic.userMessageEn, { diagnostic });
+      }
+
+      const answer = completed.text.trim() || partialText.trim();
+      if (!answer && completed.toolCalls.length === 0) throw new AppError('provider_empty_response', 502, 'The provider returned an empty stream.');
+      const assistantMessageId = cryptoId();
+      await transaction([
+        {
+          sql: 'INSERT INTO messages (id, chat_id, user_id, role, content, status, tool_calls, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          params: [assistantMessageId, chatId, req.user!.id, 'assistant', answer, 'completed', serializeToolCalls([]), key]
+        },
+        {
+          sql: 'UPDATE chats SET updated_at = CURRENT_TIMESTAMP, title = CASE WHEN title = ? THEN ? ELSE title END WHERE id = ? AND user_id = ?',
+          params: ['New chat', (input.content || attachmentRows[0]?.name || 'Attachment').slice(0, 60), chatId, req.user!.id]
+        },
+        {
+          sql: 'UPDATE agent_runs SET status = ?, log = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+          params: ['completed', JSON.stringify({ mode: 'chat', stream: true, model: completed.model }), runId, req.user!.id]
+        }
+      ]);
+      await logProviderRequest({
+        userId: req.user!.id, providerId: selected.row.id, protocol: selected.row.protocol,
+        baseUrl: selected.row.base_url, endpointPath: selected.provider.baseUrl ? new URL(`${selected.provider.baseUrl.replace(/\/$/, '')}/chat/completions`).pathname : undefined,
+        model: selected.model, stream: true, statusCode: 200, latencyMs: Date.now() - requestStarted,
+        requestId: completed.requestId
+      });
+      sendSse(res, 'status', { stage: 'completed' });
+      sendSse(res, 'completed', {
+        message: { id: assistantMessageId, role: 'assistant', content: answer, status: 'completed', tool_calls: [], attachments: [] },
+        run: { id: runId, status: 'completed' },
+        idempotencyKey: key,
+        replayed: false
+      });
+      res.end();
+    } catch (error) {
+      const normalizedError = providerErrorWithDiagnostic(selected?.row.type ?? 'provider', error);
+      const details = normalizedError.details && typeof normalizedError.details === 'object' && !Array.isArray(normalizedError.details)
+        ? normalizedError.details as Record<string, unknown>
+        : {};
+      const diagnostic = details.diagnostic as ProviderDiagnosticResult | undefined;
+      if (runId) {
+        await run('UPDATE agent_runs SET status = ?, error_code = ?, log = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?', [
+          partialText.trim() ? 'partial' : 'failed', normalizedError.code,
+          JSON.stringify({ mode: 'chat', stream: true, partialCharacters: partialText.length }), runId, req.user!.id
+        ]).catch(() => undefined);
+      }
+      if (partialText.trim() && userMessageId) {
+        await run(
+          'INSERT INTO messages (id, chat_id, user_id, role, content, status, tool_calls, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [cryptoId(), chatId, req.user!.id, 'assistant', partialText, 'partial', serializeToolCalls([]), streamKey ?? idempotencyKey(req, undefined)]
+        ).catch(() => undefined);
+      }
+      if (selected) {
+        await logProviderRequest({
+          userId: req.user!.id, providerId: selected.row.id, protocol: selected.row.protocol,
+          baseUrl: selected.row.base_url, model: selected.model, stream: true,
+          statusCode: diagnostic?.httpStatus, errorType: diagnostic?.errorType ?? diagnostic?.status,
+          latencyMs: Date.now() - requestStarted, requestId: diagnostic?.requestId,
+          upstreamRequestId: diagnostic?.upstreamRequestId
+        });
+      }
+      if (res.headersSent) {
+        sendSse(res, 'error', {
+          code: normalizedError.code,
+          message: diagnostic?.userMessage ?? normalizedError.message,
+          diagnostic,
+          partial: Boolean(partialText.trim())
+        });
+        if (!res.writableEnded && !res.destroyed) res.end();
+      } else {
+        next(normalizedError);
+      }
+    } finally {
+      res.off('close', onClose);
+      if (locked) activeChats.delete(chatId);
     }
   });
 
@@ -1118,7 +1650,7 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       if (!chat) throw new AppError('chat_not_found', 404);
 
       const existingAssistant = await get<MessageRow>(
-        `SELECT id, chat_id, role, content, tool_calls, idempotency_key, created_at
+        `SELECT id, chat_id, role, content, status, tool_calls, idempotency_key, created_at
          FROM messages WHERE chat_id = ? AND idempotency_key = ? AND role = 'assistant'`,
         [chatId, key]
       );
@@ -1138,7 +1670,8 @@ export function routes(app: Express, runtimeStatus: RuntimeStatus): void {
       if (running) throw new AppError('chat_busy', 409);
 
       const attachmentRows = await pendingAttachments(attachmentIds, chatId, req.user!.id);
-      const selectedProvider = await resolveProviderForChat(req.user!.id, chat);
+      const selected = await resolveMessageProvider(req.user!.id, chat, input.providerId, input.model);
+      const selectedProvider = selected.provider;
       const previousRows = await query<{ role: string; content: string }>(
         'SELECT role, content FROM messages WHERE chat_id = ? ORDER BY created_at DESC LIMIT ?',
         [chatId, config.maxContextMessages]

@@ -74,7 +74,7 @@ const navigation: Array<{ page: Page; label: TranslationKey; icon: string }> = [
 ];
 
 function Dashboard({ t, language, setLanguage, theme, setTheme, onLogout }: { t: T; language: Language; setLanguage: (value: Language) => void; theme: string; setTheme: (value: string) => void; onLogout: () => void }) {
-  const { request, user } = useAuth();
+  const { request, streamRequest, user } = useAuth();
   const [page, setPage] = useState<Page>(() => pageFromLocation());
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -102,7 +102,7 @@ function Dashboard({ t, language, setLanguage, theme, setTheme, onLogout }: { t:
     </aside>
     <main className="main-content">
       {page === 'home' && <HomePage request={request} t={t} language={language} onNavigate={(next) => navigate(next)} />}
-      {page === 'chat' && <ChatPage request={request} t={t} language={language} onNavigate={() => navigate('providers')} />}
+      {page === 'chat' && <ChatPage request={request} streamRequest={streamRequest} t={t} language={language} onNavigate={() => navigate('providers')} />}
       {page === 'providers' && <ProvidersPage request={request} t={t} language={language} />}
       {page === 'integrations' && <IntegrationsPage request={request} t={t} language={language} />}
       {page === 'terminal' && <TerminalPage request={request} t={t} language={language} />}

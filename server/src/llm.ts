@@ -2,7 +2,7 @@ import { AppError } from './errors.js';
 import type { AgentStep, LLMToolSpec, Msg } from './llm-types.js';
 import { diagnosticToAppError } from './providers/diagnostics.js';
 import { getProviderDefinition, normalizeProviderConfig, providerAdapterFor } from './providers/index.js';
-import type { ModelDiscoveryResult, ProviderDiagnosticResult } from './providers/types.js';
+import type { ModelDiscoveryResult, ProviderDiagnosticResult, ProviderProtocol, ProviderStreamEvent } from './providers/types.js';
 
 export type { AgentStep, LLMImage, LLMToolCall, LLMToolSpec, Msg } from './llm-types.js';
 
@@ -13,6 +13,10 @@ export type Provider = {
   defaultModel: string;
   name: string;
   customHeaders?: Record<string, string>;
+  protocol?: ProviderProtocol;
+  userId?: string;
+  providerId?: string;
+  credentialVersion?: number;
 };
 
 export type ProviderProbeAttempt = {
@@ -42,10 +46,14 @@ export class LLMError extends AppError {
 function normalized(provider: Provider, selectedModel?: string) {
   return normalizeProviderConfig({
     providerType: provider.type,
+    protocol: provider.protocol,
     apiKey: provider.apiKey,
     baseUrl: provider.baseUrl,
     selectedModel: selectedModel ?? provider.defaultModel,
-    customHeaders: provider.customHeaders
+    customHeaders: provider.customHeaders,
+    userId: provider.userId,
+    providerId: provider.providerId,
+    credentialVersion: provider.credentialVersion
   });
 }
 
@@ -76,6 +84,33 @@ function outputText(value: string): string {
   return text;
 }
 
+function retryDelayMs(diagnostic: ProviderDiagnosticResult, retryIndex: number): number {
+  if (diagnostic.retryAfterSeconds !== undefined) {
+    return Math.min(Math.max(0, diagnostic.retryAfterSeconds * 1000), 30_000);
+  }
+  const exponential = Math.min(500 * 2 ** retryIndex, 5_000);
+  return Math.round(exponential * (0.75 + Math.random() * 0.5));
+}
+
+function retryableInference(diagnostic: ProviderDiagnosticResult | undefined): diagnostic is ProviderDiagnosticResult {
+  return Boolean(diagnostic?.retryable && [
+    'rate_limited', 'provider_unavailable', 'timeout', 'network_error'
+  ].includes(diagnostic.status));
+}
+
+async function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new Error('Request aborted.');
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, delayMs);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason instanceof Error ? signal.reason : new Error('Request aborted.'));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+    timer.unref?.();
+  });
+}
+
 export async function completeAgentStep(
   provider: Provider,
   messages: readonly Msg[],
@@ -87,27 +122,41 @@ export async function completeAgentStep(
   if (!selectedModel || /^(auto|default|free)$/i.test(selectedModel)) {
     throw new LLMError('provider_model_required', 422, 'A concrete model ID is required. Discover models or diagnose the provider first.');
   }
-  try {
-    const adapter = providerAdapterFor(provider.type);
-    const result = await adapter.createChatCompletion({
-      config: normalized(provider, selectedModel),
-      messages,
-      model: selectedModel,
-      tools,
-      signal: externalSignal
-    });
-    return {
-      text: result.text,
-      toolCalls: result.toolCalls,
-      model: result.model,
-      ...(result.requestId ? { requestId: result.requestId } : {}),
-      ...(result.usage ? { usage: result.usage } : {})
-    };
-  } catch (error) {
-    if (error instanceof LLMError) throw error;
-    if (error instanceof AppError) throw new LLMError(error.code, error.status, error.message, error.details);
-    throw new LLMError('provider_unknown_error', 502, error instanceof Error ? error.message : 'Provider request failed.');
+  const adapter = providerAdapterFor(provider.type, provider.protocol);
+  const maxRetries = 2;
+  let retryCount = 0;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    if (externalSignal?.aborted) throw externalSignal.reason instanceof Error ? externalSignal.reason : new Error('Request aborted.');
+    try {
+      const result = await adapter.createChatCompletion({
+        config: normalized(provider, selectedModel),
+        messages,
+        model: selectedModel,
+        tools,
+        signal: externalSignal
+      });
+      return {
+        text: result.text,
+        toolCalls: result.toolCalls,
+        model: result.model,
+        retryCount,
+        ...(result.requestId ? { requestId: result.requestId } : {}),
+        ...(result.usage ? { usage: result.usage } : {})
+      };
+    } catch (error) {
+      lastError = error;
+      const diagnostic = diagnosticFromError(error);
+      if (attempt >= maxRetries || !retryableInference(diagnostic)) break;
+      await waitForRetry(retryDelayMs(diagnostic, attempt), externalSignal);
+      retryCount += 1;
+    }
   }
+
+  if (lastError instanceof LLMError) throw lastError;
+  if (lastError instanceof AppError) throw new LLMError(lastError.code, lastError.status, lastError.message, lastError.details);
+  throw new LLMError('provider_unknown_error', 502, lastError instanceof Error ? lastError.message : 'Provider request failed.');
 }
 
 export async function complete(
@@ -123,7 +172,7 @@ export async function discoverProviderModels(
   provider: Provider,
   options: { force?: boolean; signal?: AbortSignal } = {}
 ): Promise<ModelDiscoveryResult> {
-  const adapter = providerAdapterFor(provider.type);
+  const adapter = providerAdapterFor(provider.type, provider.protocol);
   return adapter.discoverModels(normalized(provider), options);
 }
 
@@ -141,18 +190,11 @@ function concreteModel(value: string | undefined | null): value is string {
 }
 
 function shouldProbeNext(diagnostic: ProviderDiagnosticResult): boolean {
-  return [
-    'model_not_found',
-    'model_unavailable',
-    'forbidden',
-    'invalid_request',
-    'billing_required',
-    'insufficient_quota'
-  ].includes(diagnostic.status);
+  return ['model_not_found', 'model_unavailable'].includes(diagnostic.status);
 }
 
 export async function diagnoseProviderConnection(provider: Provider, preferredModel?: string): Promise<ProviderProbeResult> {
-  const adapter = providerAdapterFor(provider.type);
+  const adapter = providerAdapterFor(provider.type, provider.protocol);
   const config = normalized(provider, preferredModel ?? provider.defaultModel);
   let discovery: ModelDiscoveryResult;
   try {
@@ -177,10 +219,13 @@ export async function diagnoseProviderConnection(provider: Provider, preferredMo
     : concreteModel(provider.defaultModel)
       ? provider.defaultModel.trim()
       : undefined;
+  const fallbackExamples = discovery.status === 'unsupported' && !['custom', 'nararouter'].includes(provider.type)
+    ? examples
+    : [];
   const candidates = [...new Set([
     ...(preferred ? [preferred] : []),
-    ...discoveredIds,
-    ...examples
+    ...(!preferred ? discoveredIds : []),
+    ...(!preferred ? fallbackExamples : [])
   ])].slice(0, 8);
 
   if (candidates.length === 0) {
@@ -211,7 +256,7 @@ export async function diagnoseProviderConnection(provider: Provider, preferredMo
         message: 'OK',
         model: candidate,
         modelsSupported: discovery.status === 'supported',
-        models: discoveredIds.length ? discoveredIds : examples,
+        models: discoveredIds.length ? discoveredIds : fallbackExamples,
         attempts,
         diagnostic: { ...diagnostic, discovery },
         discovery
@@ -226,14 +271,18 @@ export async function diagnoseProviderConnection(provider: Provider, preferredMo
     if (!shouldProbeNext(diagnostic)) break;
   }
 
-  const diagnostic = lastDiagnostic ?? {
+  const diagnostic: ProviderDiagnosticResult = lastDiagnostic ?? {
     success: false,
-    status: 'unknown_error' as const,
+    ok: false,
+    stage: 'inference',
+    status: 'unknown_error',
+    errorType: 'UNKNOWN_PROVIDER_ERROR',
     keyValid: null,
     providerReachable: null,
     modelAvailable: null,
     retryable: false,
     message: 'No model passed provider diagnostics.',
+    userMessage: 'لم ينجح أي نموذج في فحص المزوّد.',
     userMessageAr: 'لم ينجح أي نموذج في فحص المزوّد.',
     userMessageEn: 'No model passed provider diagnostics.',
     discovery
@@ -247,13 +296,35 @@ export async function diagnoseProviderConnection(provider: Provider, preferredMo
 
 export async function testProviderConnection(provider: Provider, model?: string): Promise<{ message: string; model: string; diagnostic: ProviderDiagnosticResult }> {
   const selectedModel = (model || provider.defaultModel).trim();
-  const adapter = providerAdapterFor(provider.type);
+  const adapter = providerAdapterFor(provider.type, provider.protocol);
   const diagnostic = await adapter.testConnection(normalized(provider, selectedModel), selectedModel);
   if (!diagnostic.success) {
     const appError = diagnosticToAppError(diagnostic);
     throw new LLMError(appError.code, appError.status, appError.message, appError.details);
   }
   return { message: 'OK', model: diagnostic.testedModel || selectedModel, diagnostic };
+}
+
+export async function* streamProviderCompletion(
+  provider: Provider,
+  messages: readonly Msg[],
+  model: string,
+  externalSignal?: AbortSignal
+): AsyncIterable<ProviderStreamEvent> {
+  const selectedModel = model.trim();
+  if (!selectedModel || /^(auto|default|free)$/i.test(selectedModel)) {
+    throw new LLMError('provider_model_required', 422, 'A concrete model ID is required.');
+  }
+  const adapter = providerAdapterFor(provider.type, provider.protocol);
+  if (!adapter.streamChatCompletion) {
+    throw new LLMError('provider_unsupported_streaming', 422, 'Streaming is not supported by this provider adapter.');
+  }
+  yield* adapter.streamChatCompletion({
+    config: normalized(provider, selectedModel),
+    messages,
+    model: selectedModel,
+    signal: externalSignal
+  });
 }
 
 export function providerFailureCode(error: unknown): string {

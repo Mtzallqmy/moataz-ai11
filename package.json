@@ -1,6 +1,6 @@
 {
   "name": "moataz-ai",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "type": "module",
   "description": "Moataz AI - production AI agent platform with resilient provider discovery, persistent sessions, multimodal attachments, multi-agent orchestration, Telegram controls, web/API tools, GitHub and external sandbox integrations.",
@@ -19,14 +19,14 @@
     "db:generate": "tsx server/src/db-cli.ts generate",
     "db:migrate": "tsx server/src/db-cli.ts migrate",
     "db:check": "tsx server/src/db-cli.ts check",
-    "postinstall": "node scripts/ensure-runtime-dirs.mjs"
+    "postinstall": "node scripts/ensure-runtime-dirs.mjs",
+    "diagnose:provider": "tsx scripts/diagnose-provider.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
     "@google/generative-ai": "^0.21.0",
     "@octokit/rest": "^21.0.2",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.7.0",
     "compression": "^1.7.4",
     "cookie": "^1.0.2",
     "cors": "^2.8.5",
@@ -57,6 +57,7 @@
     "@types/supertest": "^6.0.2",
     "@types/ws": "^8.5.13",
     "@vitejs/plugin-react": "^4.3.4",
+    "better-sqlite3": "^11.7.0",
     "concurrently": "^9.1.0",
     "eslint": "^9.17.0",
     "globals": "^15.14.0",

@@ -89,10 +89,14 @@ describe('environment validation', () => {
     expect(config.shellAvailable).toBe(false);
   });
 
-  it('warns when Railway is using ephemeral SQLite storage', () => {
+  it('refuses SQLite in production and on Railway', () => {
     const config = loadConfig({ ...railwayBase, DATABASE_URL: 'file:./data/moataz.db' });
     expect(config.databaseKind).toBe('sqlite');
-    expect(config.configurationWarnings).toContain('railway_ephemeral_sqlite_database');
+    expect(config.isConfigured).toBe(false);
+    expect(config.configurationProblems).toContainEqual({
+      variable: 'DATABASE_URL',
+      code: 'postgresql_required_in_production'
+    });
   });
 
   it('rejects invalid numeric limits', () => {

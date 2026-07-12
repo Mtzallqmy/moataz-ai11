@@ -143,7 +143,13 @@ export function formatError(error: unknown, language: Language): string {
   const parts = [base];
   if (details.providerMessage && details.providerMessage !== error.code) parts.push(details.providerMessage);
   if (details.suggestion) parts.push(details.suggestion);
-  if (details.diagnostic?.note) parts.push(details.diagnostic.note);
+  if (details.diagnostic) {
+    const diagnosticMessage = language === 'ar'
+      ? details.diagnostic.userMessageAr || details.diagnostic.userMessage
+      : details.diagnostic.userMessageEn || details.diagnostic.userMessage;
+    if (diagnosticMessage) parts.push(diagnosticMessage);
+    if (details.diagnostic.technicalMessage) parts.push(details.diagnostic.technicalMessage);
+  }
   if (error.requestId) parts.push(language === 'ar' ? `رقم الطلب: ${error.requestId}` : `Request ID: ${error.requestId}`);
   return [...new Set(parts)].join('\n');
 }

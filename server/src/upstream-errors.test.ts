@@ -7,6 +7,16 @@ describe('upstream error classification', () => {
     expect(result).toMatchObject({ stage: 'billing', status: 402, retryable: false, upstreamStatus: 402 });
   });
 
+  it('does not infer payment from generic billing or quota wording', () => {
+    expect(classifyUpstreamError(new Error('Billing metadata could not be loaded')).stage).toBe('unknown');
+    expect(classifyUpstreamError({ status: 429, message: 'Quota exceeded' })).toMatchObject({
+      stage: 'rate_limit',
+      status: 429,
+      retryable: true
+    });
+    expect(classifyUpstreamError({ status: 400, message: 'The billing field is malformed' }).stage).toBe('invalid_request');
+  });
+
   it('maps provider authentication without using application-session HTTP 401', () => {
     const auth = classifyUpstreamError({ status: 401, message: 'Invalid API key' });
     expect(auth).toMatchObject({ stage: 'authentication', status: 422, retryable: false, upstreamStatus: 401 });

@@ -1,10 +1,14 @@
 import { AppError } from '../errors.js';
 import { redactText } from '../redaction.js';
-import type { ProviderDiagnosticResult, ProviderDiagnosticStatus } from './types.js';
+import type {
+  ProviderDiagnosticResult,
+  ProviderDiagnosticStage,
+  ProviderDiagnosticStatus
+} from './types.js';
 
 type UnknownRecord = Record<string, unknown>;
-
 type DiagnosticContext = {
+  stage?: ProviderDiagnosticStage | undefined;
   requestId?: string | undefined;
   testedEndpoint?: string | undefined;
   testedModel?: string | undefined;
@@ -19,83 +23,93 @@ function record(value: unknown): UnknownRecord {
 function statusOf(error: unknown): number | undefined {
   if (error instanceof AppError) {
     const details = record(error.details);
-    if (typeof details.upstreamStatus === 'number') return details.upstreamStatus;
-    if (typeof details.httpStatus === 'number') return details.httpStatus;
+    const candidate = details.upstreamStatus ?? details.httpStatus;
+    if (typeof candidate === 'number') return candidate;
   }
   const root = record(error);
   const response = record(root.response);
-  const values = [root.status, root.statusCode, response.status];
-  return values.find((value): value is number => typeof value === 'number' && Number.isInteger(value));
+  return [root.status, root.statusCode, response.status]
+    .find((value): value is number => typeof value === 'number' && Number.isInteger(value));
+}
+
+function bodyOf(error: unknown): UnknownRecord {
+  const root = record(error);
+  const response = record(root.response);
+  return record(response.data ?? response.body ?? root.body);
 }
 
 function providerCodeOf(error: unknown): string | undefined {
+  if (error instanceof AppError) {
+    const details = record(error.details);
+    if (typeof details.providerCode === 'string') return details.providerCode.slice(0, 160);
+  }
   const root = record(error);
-  const response = record(root.response);
-  const body = record(response.data ?? response.body);
+  const body = bodyOf(error);
   const nested = record(body.error);
-  const candidates = [nested.code, nested.type, body.code, body.type, root.code];
-  return candidates.find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.slice(0, 160);
+  return [nested.code, nested.type, body.code, body.type, root.code]
+    .find((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    ?.trim().slice(0, 160);
 }
 
 function messageOf(error: unknown): string {
   if (error instanceof AppError && error.message) return redactText(error.message).slice(0, 1200);
   const root = record(error);
-  const response = record(root.response);
-  const body = record(response.data ?? response.body);
+  const body = bodyOf(error);
   const nested = record(body.error);
-  const candidates = [nested.message, nested.detail, body.message, body.detail, root.message, typeof error === 'string' ? error : undefined];
-  return (candidates.find((value): value is string => typeof value === 'string' && value.trim().length > 0) ?? 'Provider request failed.').trim().slice(0, 1200);
+  const value = [nested.message, nested.detail, body.message, body.detail, root.message, typeof error === 'string' ? error : undefined]
+    .find((candidate): candidate is string => typeof candidate === 'string' && candidate.trim().length > 0)
+    ?? 'Provider request failed.';
+  return redactText(value).trim().slice(0, 1200);
 }
 
 function headerValue(error: unknown, names: readonly string[]): string | undefined {
   const root = record(error);
   const response = record(root.response);
   const headers = response.headers;
-  if (headers && typeof (headers as Headers).get === 'function') {
+  if (headers instanceof Headers) {
     for (const name of names) {
-      const value = (headers as Headers).get(name);
-      if (value) return value.slice(0, 200);
+      const value = headers.get(name);
+      if (value) return redactText(value).slice(0, 200);
     }
   }
-  const map = record(headers);
+  const headerRecord = record(headers);
   for (const name of names) {
-    const value = map[name] ?? map[name.toLowerCase()];
-    if (typeof value === 'string' && value) return value.slice(0, 200);
+    const value = headerRecord[name] ?? headerRecord[name.toLowerCase()];
+    if (typeof value === 'string' && value.trim()) return redactText(value).slice(0, 200);
   }
+  return undefined;
+}
+
+function retryAfterSeconds(error: unknown): number | undefined {
+  const raw = headerValue(error, ['retry-after']);
+  if (!raw) return undefined;
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && numeric >= 0) return Math.ceil(numeric);
+  const date = Date.parse(raw);
+  if (!Number.isNaN(date)) return Math.max(0, Math.ceil((date - Date.now()) / 1000));
   return undefined;
 }
 
 function result(
   status: ProviderDiagnosticStatus,
-  input: {
-    success?: boolean | undefined;
-    keyValid: boolean | null;
-    providerReachable: boolean | null;
-    modelAvailable: boolean | null;
-    retryable: boolean;
-    message: string;
+  stage: ProviderDiagnosticStage,
+  input: Omit<ProviderDiagnosticResult, 'success' | 'ok' | 'status' | 'stage' | 'userMessage' | 'errorType'> & {
     userMessageAr: string;
     userMessageEn: string;
-    httpStatus?: number | undefined;
-    providerCode?: string | undefined;
-    upstreamRequestId?: string | undefined;
+    errorType?: string | undefined;
   },
   context: DiagnosticContext
 ): ProviderDiagnosticResult {
+  const success = status === 'ready';
   return {
-    success: input.success ?? false,
+    success,
+    ok: success,
     status,
-    keyValid: input.keyValid,
-    providerReachable: input.providerReachable,
-    modelAvailable: input.modelAvailable,
-    retryable: input.retryable,
-    ...(input.httpStatus !== undefined ? { httpStatus: input.httpStatus } : {}),
-    ...(input.providerCode ? { providerCode: input.providerCode } : {}),
-    message: input.message,
-    userMessageAr: input.userMessageAr,
-    userMessageEn: input.userMessageEn,
+    stage,
+    errorType: input.errorType ?? status.toUpperCase(),
+    ...input,
+    userMessage: input.userMessageAr,
     ...(context.requestId ? { requestId: context.requestId } : {}),
-    ...(input.upstreamRequestId ? { upstreamRequestId: input.upstreamRequestId } : {}),
     ...(context.testedEndpoint ? { testedEndpoint: context.testedEndpoint } : {}),
     ...(context.testedModel ? { testedModel: context.testedModel } : {}),
     ...(context.latencyMs !== undefined ? { latencyMs: context.latencyMs } : {})
@@ -103,154 +117,196 @@ function result(
 }
 
 export function readyDiagnostic(context: DiagnosticContext): ProviderDiagnosticResult {
-  return result('ready', {
-    success: true,
+  return result('ready', context.stage ?? 'inference', {
     keyValid: true,
     providerReachable: true,
     modelAvailable: true,
     retryable: false,
     message: 'The provider accepted the credentials and completed a real inference request.',
-    userMessageAr: 'نجح الوصول إلى المزوّد والمفتاح والنموذج، وتم تنفيذ طلب استدلال حقيقي.',
-    userMessageEn: 'The provider, credentials, and model passed a real inference request.'
+    technicalMessage: 'A non-streaming Chat Completions request returned a parseable completion.',
+    userMessageAr: 'نجح الاتصال بالمزوّد وتم تنفيذ طلب استدلال حقيقي بالمفتاح والنموذج المحددين.',
+    userMessageEn: 'The provider, credentials, and selected model passed a real inference request.'
   }, context);
 }
 
 export function unsupportedDiscoveryDiagnostic(context: DiagnosticContext): ProviderDiagnosticResult {
-  return result('model_discovery_unsupported', {
+  return result('model_discovery_unsupported', 'model_discovery', {
     keyValid: context.discoverySucceeded ? true : null,
     providerReachable: true,
     modelAvailable: null,
     retryable: false,
-    message: 'The provider does not expose a compatible model discovery endpoint. Enter a model ID manually.',
-    userMessageAr: 'المزوّد لا يوفر مسارًا متوافقًا لاكتشاف النماذج. يمكنك إدخال معرف النموذج يدويًا ثم اختباره.',
-    userMessageEn: 'The provider does not expose a compatible model discovery endpoint. Enter a model ID manually.'
+    message: 'The provider does not expose a compatible model discovery endpoint.',
+    technicalMessage: 'The models endpoint returned 404/405 or is not defined for this provider.',
+    userMessageAr: 'المزوّد لا يوفر مسارًا متوافقًا لاكتشاف النماذج. أدخل Model ID يدويًا ثم اختبره.',
+    userMessageEn: 'The provider does not expose a compatible models endpoint. Enter a model ID manually.'
   }, context);
 }
 
 export function diagnoseProviderError(error: unknown, context: DiagnosticContext = {}): ProviderDiagnosticResult {
+  if (error instanceof AppError) {
+    const existing = record(error.details).diagnostic;
+    if (existing && typeof existing === 'object' && !Array.isArray(existing)) return existing as ProviderDiagnosticResult;
+  }
+
   const httpStatus = statusOf(error);
   const providerCode = providerCodeOf(error);
   const message = messageOf(error);
-  const lower = `${providerCode ?? ''} ${message}`.toLowerCase();
-  const upstreamRequestId = headerValue(error, ['x-request-id', 'request-id', 'cf-ray', 'x-amzn-requestid']);
-  const common = { message, httpStatus, providerCode, upstreamRequestId };
+  const technicalMessage = message;
+  const upstreamRequestId = headerValue(error, ['x-request-id', 'request-id', 'x-amzn-requestid', 'cf-ray']);
+  const retryAfter = retryAfterSeconds(error);
+  const lowerCode = (providerCode ?? '').toLowerCase();
+  const lowerMessage = message.toLowerCase();
+  const searchable = `${lowerCode} ${lowerMessage}`;
+  const stage = context.stage ?? 'inference';
+  const common = {
+    httpStatus,
+    providerCode,
+    upstreamRequestId,
+    technicalMessage,
+    message,
+    ...(retryAfter !== undefined ? { retryAfterSeconds: retryAfter } : {})
+  };
 
-  if (/no available channel|no channel available|no available provider|model.+temporarily unavailable/.test(lower)) {
-    return result('model_unavailable', {
-      ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: false, retryable: true,
-      userMessageAr: 'تم الوصول إلى المزوّد، لكن لا توجد قناة متاحة حاليًا للنموذج المحدد. اختر نموذجًا آخر من قائمة النماذج المتاحة أو أعد المحاولة لاحقًا.',
-      userMessageEn: 'The provider was reached, but no channel is currently available for the selected model. Choose another available model or retry later.'
-    }, context);
-  }
-  if (httpStatus === 401 || /invalid api key|incorrect api key|unauthorized|authentication failed|invalid token/.test(lower)) {
-    return result('invalid_api_key', {
+  const explicitPayment = /^(payment_required|billing_required|insufficient_funds|insufficient_credits?)$/.test(lowerCode)
+    || /payment required|billing must be enabled|account balance is insufficient/.test(lowerMessage);
+  const explicitQuota = /^(insufficient_quota|quota_exceeded|quota_exhausted)$/.test(lowerCode)
+    || /quota (?:has been )?exceeded|insufficient quota/.test(lowerMessage);
+  const explicitRate = /^(rate_limit(?:ed)?|too_many_requests)$/.test(lowerCode)
+    || /rate limit|too many requests/.test(lowerMessage);
+  const explicitModelPermission = /model.*(?:not allowed|forbidden|permission|access)|not authorized.*model|model_access_denied/.test(searchable);
+  const explicitUnsupportedParameter = /unsupported_(?:parameter|value)|unknown parameter|unrecognized (?:request )?(?:argument|parameter)|does not support.*(?:tools|response_format|temperature)/.test(searchable);
+
+  if (httpStatus === 401 || /^(invalid_api_key|authentication_error|unauthorized)$/.test(lowerCode)) {
+    return result('invalid_api_key', 'authentication', {
       ...common, keyValid: false, providerReachable: true, modelAvailable: null, retryable: false,
-      userMessageAr: 'رفض المزوّد مفتاح API أو التوكن. تحقق من المفتاح وأعد الفحص.',
-      userMessageEn: 'The provider rejected the API key or token.'
+      userMessageAr: 'رفض المزوّد مفتاح API أو لم يصل Authorization بصورة صحيحة. تحقق من المفتاح ثم أعد الاختبار.',
+      userMessageEn: 'The provider rejected the API key or did not receive authorization correctly.'
     }, context);
   }
-  if (httpStatus === 403 || /forbidden|permission denied|insufficient scope|access denied/.test(lower)) {
-    return result('forbidden', {
+  if (httpStatus === 402 || explicitPayment) {
+    return result('billing_required', stage, {
       ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: null, retryable: false,
-      userMessageAr: 'تم الوصول إلى المزوّد، لكن المفتاح لا يملك الصلاحية المطلوبة للنموذج أو المورد.',
-      userMessageEn: 'The provider was reached, but the key lacks the required permission.'
+      userMessageAr: 'أعاد المزوّد خطأ دفع أو رصيد صريحًا. فعّل الفوترة أو أضف الرصيد المطلوب لدى المزوّد.',
+      userMessageEn: 'The provider explicitly reported a payment or balance requirement.'
     }, context);
   }
-  if (httpStatus === 429) {
-    if (/insufficient[_ ]quota|quota exceeded|credits? exhausted|insufficient credits?/.test(lower)) {
-      return result('insufficient_quota', {
-        ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: null, retryable: false,
-        userMessageAr: 'المفتاح مقبول، لكن الحصة أو الرصيد المتاح نفد.',
-        userMessageEn: 'The key was accepted, but the available quota or credits are exhausted.'
-      }, context);
-    }
-    if (/billing|required payment|payment required|add credits/.test(lower)) {
-      return result('billing_required', {
-        ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: null, retryable: false,
-        userMessageAr: 'المزوّد يتطلب تفعيل الفوترة أو إضافة رصيد قبل تنفيذ الطلب.',
-        userMessageEn: 'The provider requires billing activation or additional credits.'
-      }, context);
-    }
-    return result('rate_limited', {
-      ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: null, retryable: true,
-      userMessageAr: 'تم بلوغ حد الطلبات أو التوكنات. انتظر ثم أعد المحاولة.',
-      userMessageEn: 'The request or token rate limit was reached. Retry later.'
-    }, context);
-  }
-  if (httpStatus === 402 || /payment required|billing required|requires? more credits?|credit balance/.test(lower)) {
-    return result('billing_required', {
-      ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: null, retryable: false,
-      userMessageAr: 'المزوّد يتطلب رصيدًا أو تفعيل الفوترة قبل تنفيذ الطلب.',
-      userMessageEn: 'The provider requires credits or billing before the request can run.'
+  if (httpStatus === 403) {
+    const status: ProviderDiagnosticStatus = explicitModelPermission ? 'model_not_allowed' : 'forbidden';
+    return result(status, stage, {
+      ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true,
+      modelAvailable: explicitModelPermission ? false : null, retryable: false,
+      userMessageAr: explicitModelPermission
+        ? 'المفتاح مقبول، لكن الحساب لا يملك صلاحية استخدام النموذج المحدد.'
+        : 'تمت مصادقة الطلب أو الوصول إلى المزوّد، لكن المورد أو العملية غير مسموحين لهذا المفتاح.',
+      userMessageEn: explicitModelPermission
+        ? 'The key is accepted, but the account cannot use the selected model.'
+        : 'The provider denied access to this resource or operation.'
     }, context);
   }
   if (httpStatus === 404) {
-    if (/model|deployment/.test(lower)) {
-      return result('model_not_found', {
-        ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: false, retryable: false,
-        userMessageAr: 'تم الوصول إلى المزوّد، لكن النموذج أو النشر المحدد غير موجود لهذا الحساب.',
-        userMessageEn: 'The provider was reached, but the selected model or deployment was not found.'
+    const isModel = Boolean(context.testedModel) && /model|deployment|engine/.test(searchable);
+    return result(isModel ? 'model_not_found' : 'endpoint_not_found', stage === 'model_discovery' ? 'model_discovery' : stage, {
+      ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true,
+      modelAvailable: isModel ? false : null, retryable: false,
+      userMessageAr: isModel
+        ? 'وصل الطلب إلى المزوّد، لكن Model ID المحدد غير موجود أو غير متاح لهذا الحساب.'
+        : 'المضيف متاح لكن مسار API غير موجود. تحقق من Base URL ولا تكرر ‎/v1 أو endpoint.',
+      userMessageEn: isModel
+        ? 'The selected model ID was not found or is unavailable to this account.'
+        : 'The API endpoint was not found. Check the normalized Base URL and endpoint path.'
+    }, context);
+  }
+  if (httpStatus === 405 && stage === 'model_discovery') {
+    return result('model_discovery_unsupported', 'model_discovery', {
+      ...common, keyValid: null, providerReachable: true, modelAvailable: null, retryable: false,
+      userMessageAr: 'المزوّد لا يدعم طريقة اكتشاف النماذج هذه. أدخل Model ID يدويًا واختبر الاستدلال.',
+      userMessageEn: 'This provider does not support this model discovery method. Enter a model ID manually.'
+    }, context);
+  }
+  if (httpStatus === 413 || /context_length_exceeded|request too large|maximum context|too many tokens/.test(searchable)) {
+    return result('context_too_large', stage, {
+      ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: true, retryable: false,
+      userMessageAr: 'حجم الطلب أو سياق المحادثة أكبر من الحد الذي يقبله النموذج.',
+      userMessageEn: 'The request or conversation context exceeds the model limit.'
+    }, context);
+  }
+  if (httpStatus === 429) {
+    if (explicitQuota) {
+      return result('insufficient_quota', stage, {
+        ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: null, retryable: false,
+        userMessageAr: 'المفتاح مقبول، لكن المزوّد أعاد خطأ حصة مستنفدة بصورة صريحة.',
+        userMessageEn: 'The key was accepted, but the provider explicitly reported exhausted quota.'
       }, context);
     }
-    return result('endpoint_not_found', {
-      ...common, keyValid: null, providerReachable: true, modelAvailable: null, retryable: false,
-      userMessageAr: 'تم الوصول إلى المضيف، لكن مسار API المطلوب غير موجود. تحقق من Base URL.',
-      userMessageEn: 'The host was reached, but the requested API endpoint does not exist. Check the base URL.'
+    return result('rate_limited', stage, {
+      ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: null,
+      retryable: true,
+      userMessageAr: retryAfter !== undefined
+        ? `تم بلوغ حد الطلبات. أعد المحاولة بعد نحو ${retryAfter} ثانية.`
+        : 'تم بلوغ حد الطلبات أو التوكنات مؤقتًا. أعد المحاولة لاحقًا.',
+      userMessageEn: explicitRate ? 'The provider rate limit was reached.' : 'The provider returned HTTP 429.'
     }, context);
   }
-  if (httpStatus === 408 || /abort|timeout|timed out|deadline exceeded/.test(lower)) {
-    return result('timeout', {
+  if (httpStatus === 408 || /abort|timeout|timed out|deadline exceeded/.test(searchable)) {
+    return result('timeout', stage, {
       ...common, keyValid: null, providerReachable: null, modelAvailable: null, retryable: true,
-      userMessageAr: 'انتهت مهلة الاتصال بالمزوّد. أعد المحاولة لاحقًا.',
-      userMessageEn: 'The provider request timed out. Retry later.'
+      userMessageAr: 'انتهت مهلة الاتصال بالمزوّد. هذا لا يعني أن المفتاح غير صالح.',
+      userMessageEn: 'The provider request timed out; this does not mean the key is invalid.'
     }, context);
   }
-  if (httpStatus !== undefined && httpStatus >= 500) {
-    return result('provider_unavailable', {
+  if (httpStatus !== undefined && [500, 502, 503, 504].includes(httpStatus)) {
+    return result('provider_unavailable', stage, {
       ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: null, retryable: true,
-      userMessageAr: 'خدمة المزوّد غير متاحة مؤقتًا. هذا لا يعني أن المفتاح خاطئ.',
-      userMessageEn: 'The provider is temporarily unavailable. This does not mean the key is invalid.'
+      userMessageAr: 'المزوّد أو خدمته العليا غير متاحين مؤقتًا. أعد المحاولة لاحقًا.',
+      userMessageEn: 'The provider or its upstream service is temporarily unavailable.'
     }, context);
   }
-  if (/enotfound|dns|name not resolved|getaddrinfo/.test(lower)) {
-    return result('dns_error', {
+  if (explicitUnsupportedParameter) {
+    return result('unsupported_parameter', stage, {
+      ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: null, retryable: false,
+      userMessageAr: 'رفض المزوّد معاملًا غير مدعوم. راجع التفاصيل التقنية وأزل المعامل المحدد.',
+      userMessageEn: 'The provider rejected an unsupported parameter.'
+    }, context);
+  }
+  if (httpStatus === 400 || httpStatus === 409 || httpStatus === 415 || httpStatus === 422) {
+    return result('invalid_request', stage, {
+      ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: null, retryable: false,
+      userMessageAr: 'رفض المزوّد صيغة الطلب أو أحد المعاملات. لا يدل ذلك على أن المفتاح خاطئ.',
+      userMessageEn: 'The provider rejected the request payload or a parameter; this does not mean the key is invalid.'
+    }, context);
+  }
+  if (/enotfound|dns|name not resolved|getaddrinfo/.test(searchable)) {
+    return result('dns_error', stage, {
       ...common, keyValid: null, providerReachable: false, modelAvailable: null, retryable: true,
       userMessageAr: 'تعذر حل اسم مضيف المزوّد عبر DNS.',
-      userMessageEn: 'The provider hostname could not be resolved through DNS.'
+      userMessageEn: 'The provider hostname could not be resolved.'
     }, context);
   }
-  if (/certificate|tls|ssl|self signed|unable to verify/.test(lower)) {
-    return result('tls_error', {
+  if (/certificate|tls|ssl|self signed|unable to verify/.test(searchable)) {
+    return result('tls_error', stage, {
       ...common, keyValid: null, providerReachable: false, modelAvailable: null, retryable: false,
       userMessageAr: 'فشل اتصال TLS/SSL مع المزوّد. تحقق من الشهادة والرابط.',
       userMessageEn: 'The TLS/SSL connection to the provider failed.'
     }, context);
   }
-  if (/econn|fetch failed|network|socket|connection refused/.test(lower)) {
-    return result('network_error', {
+  if (/econn|fetch failed|network|socket|connection refused|connection reset/.test(searchable)) {
+    return result('network_error', stage, {
       ...common, keyValid: null, providerReachable: false, modelAvailable: null, retryable: true,
       userMessageAr: 'تعذر الاتصال بالشبكة أو بخادم المزوّد.',
       userMessageEn: 'The provider could not be reached over the network.'
     }, context);
   }
-  if (httpStatus === 400 || httpStatus === 409 || httpStatus === 415 || httpStatus === 422) {
-    return result('invalid_request', {
-      ...common, keyValid: context.discoverySucceeded ? true : null, providerReachable: true, modelAvailable: null, retryable: false,
-      userMessageAr: 'رفض المزوّد صيغة الطلب أو أحد المعاملات. هذا لا يعني أن المفتاح خاطئ.',
-      userMessageEn: 'The provider rejected the request payload or a parameter. This does not mean the key is invalid.'
+  if (/invalid json|malformed json|unexpected token|html response|invalid response|premature close|empty (?:completion|response)|reasoning.*(?:no|without).*final answer|no user-facing final answer/.test(searchable)) {
+    return result('invalid_response', stage, {
+      ...common, keyValid: null, providerReachable: true, modelAvailable: null, retryable: false,
+      userMessageAr: 'أعاد المزوّد استجابة غير صالحة أو أغلق البث قبل اكتماله.',
+      userMessageEn: 'The provider returned an invalid response or closed the stream prematurely.'
     }, context);
   }
-  if (/invalid json|malformed json|unexpected token|html response|invalid response/.test(lower)) {
-    return result('invalid_response', {
-      ...common, keyValid: null, providerReachable: true, modelAvailable: null, retryable: true,
-      userMessageAr: 'أعاد المزوّد استجابة غير صالحة أو غير متوقعة.',
-      userMessageEn: 'The provider returned an invalid or unexpected response.'
-    }, context);
-  }
-  return result('unknown_error', {
+  return result('unknown_error', stage, {
     ...common, keyValid: null, providerReachable: null, modelAvailable: null, retryable: false,
-    userMessageAr: 'أعاد المزوّد خطأ غير معروف. راجع رقم الطلب ورسالة المزوّد المنقحة.',
-    userMessageEn: 'The provider returned an unknown error. Review the request ID and redacted provider message.'
+    userMessageAr: 'أعاد المزوّد خطأ غير مصنف. راجع التفاصيل التقنية المنقحة ورقم الطلب.',
+    userMessageEn: 'The provider returned an unclassified error. Review the redacted technical details.'
   }, context);
 }
 
@@ -259,14 +315,18 @@ export function diagnosticToAppError(diagnostic: ProviderDiagnosticResult): AppE
     ready: 200,
     invalid_api_key: 422,
     forbidden: 403,
+    model_not_allowed: 403,
     invalid_base_url: 422,
     endpoint_not_found: 422,
     model_not_found: 422,
     model_unavailable: 503,
     provider_unavailable: 503,
     rate_limited: 429,
-    insufficient_quota: 402,
+    insufficient_quota: 429,
     billing_required: 402,
+    context_too_large: 413,
+    unsupported_parameter: 422,
+    unsupported_streaming: 422,
     timeout: 504,
     network_error: 503,
     dns_error: 422,
@@ -277,9 +337,9 @@ export function diagnosticToAppError(diagnostic: ProviderDiagnosticResult): AppE
     invalid_response: 502,
     unknown_error: 502
   };
-  return new AppError(`provider_${diagnostic.status}`, statusMap[diagnostic.status], diagnostic.message, {
+  return new AppError(`provider_${diagnostic.status}`, statusMap[diagnostic.status], diagnostic.userMessageEn, {
     diagnostic,
-    stage: diagnostic.status,
+    stage: diagnostic.stage,
     retryable: diagnostic.retryable,
     ...(diagnostic.httpStatus !== undefined ? { upstreamStatus: diagnostic.httpStatus } : {}),
     ...(diagnostic.upstreamRequestId ? { providerRequestId: diagnostic.upstreamRequestId } : {})
