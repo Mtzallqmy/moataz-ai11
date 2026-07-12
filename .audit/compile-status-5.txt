@@ -1,2 +1,0 @@
-lint=1
-typecheck=2

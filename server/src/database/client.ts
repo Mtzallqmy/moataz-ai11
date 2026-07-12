@@ -85,6 +85,3 @@ export async function closeDatabase(): Promise<void> {
   await pool.end();
 }
 
-export async function withTransaction<T>(callback: (tx: NodePgDatabase<typeof schema>) => Promise<T>): Promise<T> {
-  return database.transaction(callback);
-}

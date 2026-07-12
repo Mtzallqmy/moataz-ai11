@@ -236,3 +236,13 @@ npm run build
 راجع [`CHANGELOG.md`](CHANGELOG.md) لمعرفة التغييرات، و[`reports/phase-0-1-report-ar.md`](reports/phase-0-1-report-ar.md) لتقرير التنفيذ التفصيلي.
 
 </div>
+
+
+## Provider Registry and PostgreSQL/Drizzle (2.0.0)
+
+Version 2.0.0 completes two bounded architecture phases only:
+
+- a typed provider registry with native Anthropic and Gemini adapters, OpenAI-compatible adapters, safe Base URL normalization, SSRF protection, bounded model discovery, real inference probes, streaming, tools, and structured diagnostics;
+- a PostgreSQL/Supabase-only persistence layer using Drizzle ORM, tracked data-preserving migrations, typed repositories, hashed sessions/tickets, stable message sequencing, structured agent runs/steps/tool executions, and PostgreSQL integration tests.
+
+Provider and integration credentials are entered through the authenticated UI and stored encrypted. They are not frontend or Railway provider-key variables. Read `docs/PHASE12_ARCHITECTURE.md` and `docs/RAILWAY_SUPABASE_PHASE12.md` before deployment.

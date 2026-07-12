@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Moataz AI - production AI agent platform with resilient provider discovery, persistent sessions, multimodal attachments, multi-agent orchestration, Telegram controls, web/API tools, GitHub and external sandbox integrations.",
+  "description": "Moataz AI production SaaS agent platform with typed multi-provider adapters and PostgreSQL/Drizzle persistence.",
   "scripts": {
     "dev": "concurrently \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "tsx watch server/src/index.ts",

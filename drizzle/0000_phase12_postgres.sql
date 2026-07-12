@@ -338,6 +338,36 @@ BEGIN
   END IF;
 END $$;
 --> statement-breakpoint
+WITH ranked_messages AS (
+  SELECT id, row_number() OVER (
+    PARTITION BY chat_id, idempotency_key, role
+    ORDER BY created_at ASC, id ASC
+  ) AS duplicate_rank
+  FROM messages
+  WHERE idempotency_key IS NOT NULL
+)
+UPDATE messages
+SET idempotency_key = NULL
+FROM ranked_messages
+WHERE messages.id = ranked_messages.id AND ranked_messages.duplicate_rank > 1;
+WITH ranked_runs AS (
+  SELECT id, row_number() OVER (
+    PARTITION BY chat_id
+    ORDER BY started_at DESC, created_at DESC, id DESC
+  ) AS running_rank
+  FROM agent_runs
+  WHERE status = 'running'
+)
+UPDATE agent_runs
+SET status = 'failed',
+    error_code = COALESCE(error_code, 'migration_duplicate_running_run'),
+    error_message = COALESCE(error_message, 'A duplicate running agent run was closed during migration.'),
+    finished_at = COALESCE(finished_at, CURRENT_TIMESTAMP),
+    completed_at = COALESCE(completed_at, CURRENT_TIMESTAMP),
+    updated_at = CURRENT_TIMESTAMP
+FROM ranked_runs
+WHERE agent_runs.id = ranked_runs.id AND ranked_runs.running_rank > 1;
+--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS messages_chat_sequence_unique ON messages(chat_id, sequence);
 CREATE UNIQUE INDEX IF NOT EXISTS messages_chat_idempotency_role_unique ON messages(chat_id, idempotency_key, role) WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS messages_chat_created_idx ON messages(chat_id, created_at);
