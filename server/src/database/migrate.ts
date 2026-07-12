@@ -1,37 +1,48 @@
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { migrate as runDrizzleMigrations } from 'drizzle-orm/node-postgres/migrator';
 import { config } from '../config.js';
-import { AppError } from '../errors.js';
 import { logger } from '../logger.js';
 import { connectWithRetry, database, pool } from './client.js';
 
-export async function migrateDatabase(): Promise<void> {
-  await connectWithRetry();
-  const migrationsFolder = path.resolve(process.cwd(), 'drizzle');
-  const started = Date.now();
-  try {
-    await runDrizzleMigrations(database, { migrationsFolder });
-    logger.info('database_migrations_completed', { durationMs: Date.now() - started });
-  } catch (error) {
-    logger.error('database_migrations_failed', {
-      durationMs: Date.now() - started,
-      error: error instanceof Error ? error.message : String(error)
-    });
-    throw new AppError('database_migration_failed', 503, 'Database migrations failed.');
-  }
-}
+type Journal = {
+  entries?: Array<{ tag?: string }>;
+};
 
-export async function migrationStatus(): Promise<{ ready: boolean; applied: string[]; pending: string[] }> {
+const migrationsFolder = path.resolve(process.cwd(), 'drizzle');
+
+async function journalTags(): Promise<string[]> {
   try {
-    const result = await pool.query<{ hash: string; created_at: string }>(
-      `SELECT hash, created_at::text FROM drizzle.__drizzle_migrations ORDER BY created_at ASC`
-    );
-    return { ready: result.rows.length > 0, applied: result.rows.map((row) => row.hash), pending: [] };
+    const raw = await readFile(path.join(migrationsFolder, 'meta', '_journal.json'), 'utf8');
+    const journal = JSON.parse(raw) as Journal;
+    return (journal.entries ?? []).flatMap((entry) => typeof entry.tag === 'string' ? [entry.tag] : []);
   } catch {
-    return { ready: false, applied: [], pending: ['0000_phase12_postgres'] };
+    return [];
   }
 }
 
 export function shouldMigrateOnStartup(): boolean {
   return config.databaseMigrationsOnStartup;
+}
+
+export async function migrateDatabase(): Promise<void> {
+  await connectWithRetry();
+  logger.info('database_migration_started', { migrationsFolder: 'drizzle' });
+  await runDrizzleMigrations(database, { migrationsFolder });
+  logger.info('database_migration_completed');
+}
+
+export async function migrationStatus(): Promise<{ ready: boolean; applied: string[]; pending: string[] }> {
+  const tags = await journalTags();
+  try {
+    const result = await pool.query<{ id: number }>(
+      `SELECT id FROM drizzle.__drizzle_migrations ORDER BY created_at ASC, id ASC`
+    );
+    const appliedCount = result.rows.length;
+    const applied = tags.length > 0 ? tags.slice(0, appliedCount) : result.rows.map((row) => String(row.id));
+    const pending = tags.slice(appliedCount);
+    return { ready: pending.length === 0 && appliedCount >= tags.length, applied, pending };
+  } catch {
+    return { ready: false, applied: [], pending: tags.length > 0 ? tags : ['migration_history_unavailable'] };
+  }
 }
