@@ -1,0 +1,37 @@
+name: Fix OpenAI-compatible adapter imports
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.head_ref == 'feat/providers-drizzle-phase12'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('server/src/providers/adapters/openai-compatible.adapter.ts')
+          text = path.read_text()
+          if "from 'zod'" not in text:
+              text = text.replace("import { randomUUID } from 'node:crypto';\n", "import { randomUUID } from 'node:crypto';\nimport { z } from 'zod';\n", 1)
+          if "parseModelResponse" not in text:
+              text = text.replace("import { getProviderDefinition } from '../registry.js';\n", "import { getProviderDefinition } from '../registry.js';\nimport { parseModelResponse } from '../model-response.js';\n", 1)
+          text = text.replace("parseModels(response.payload, configValue.providerType === 'custom')", "parseModelResponse(response.payload, configValue.providerType === 'custom')")
+          path.write_text(text)
+          PY
+          rm -f .github/workflows/fix-openai-adapter-imports.yml
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: retain OpenAI-compatible response validation imports'
+          git push origin HEAD:${{ github.head_ref }}
