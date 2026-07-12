@@ -39,6 +39,13 @@ const definitions: readonly ProviderDefinition[] = [
     apiKeyRequired: true, defaultHeaders: {}, allowedCustomHeaders: sharedCustomHeaders, modelExamples: [], capabilities: openAiCaps
   },
   {
+    id: 'omniroute', displayName: 'OmniRoute Gateway', protocol: 'openai-compatible', defaultBaseUrl: null, authentication: 'bearer',
+    modelsPath: 'models', chatPath: 'chat/completions', responsesPath: null, allowBaseUrlOverride: true, allowLocalNetwork: true,
+    apiKeyRequired: true, defaultHeaders: {},
+    allowedCustomHeaders: [...sharedCustomHeaders, 'x-omniroute-mode', 'x-omniroute-budget', 'x-omniroute-compression', 'x-route-model'],
+    modelExamples: ['auto', 'auto/coding', 'auto/fast', 'auto/cheap', 'auto/offline', 'auto/smart'], capabilities: openAiCaps
+  },
+  {
     id: 'anthropic', displayName: 'Anthropic', protocol: 'anthropic', defaultBaseUrl: 'https://api.anthropic.com', authentication: 'x-api-key',
     modelsPath: null, chatPath: 'v1/messages', responsesPath: null, allowBaseUrlOverride: true, allowLocalNetwork: false,
     apiKeyRequired: true, defaultHeaders: { 'anthropic-version': '2023-06-01' }, allowedCustomHeaders: ['anthropic-beta'],

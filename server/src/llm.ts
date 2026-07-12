@@ -111,6 +111,13 @@ async function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void
   });
 }
 
+export function isExecutableProviderModel(providerType: string, value: string | undefined | null): value is string {
+  const model = value?.trim() ?? '';
+  if (!model) return false;
+  if (providerType.trim().toLowerCase() === 'omniroute' && /^auto(?:\/[A-Za-z0-9._:-]+)?$/i.test(model)) return true;
+  return !/^(auto|default|free|latest)$/i.test(model);
+}
+
 export async function completeAgentStep(
   provider: Provider,
   messages: readonly Msg[],
@@ -119,8 +126,8 @@ export async function completeAgentStep(
   externalSignal?: AbortSignal
 ): Promise<AgentStep> {
   const selectedModel = (model || provider.defaultModel).trim();
-  if (!selectedModel || /^(auto|default|free)$/i.test(selectedModel)) {
-    throw new LLMError('provider_model_required', 422, 'A concrete model ID is required. Discover models or diagnose the provider first.');
+  if (!isExecutableProviderModel(provider.type, selectedModel)) {
+    throw new LLMError('provider_model_required', 422, 'A concrete model ID is required. OmniRoute also supports its documented auto/* virtual model IDs.');
   }
   const adapter = providerAdapterFor(provider.type, provider.protocol);
   const maxRetries = 2;
@@ -178,15 +185,15 @@ export async function discoverProviderModels(
 
 export async function listProviderModels(provider: Provider): Promise<{ supported: boolean; models: string[]; discovery?: ModelDiscoveryResult }> {
   const discovery = await discoverProviderModels(provider);
+  const discovered = discovery.models.map((model) => model.id).filter((model) => isExecutableProviderModel(provider.type, model));
+  const virtualModels = provider.type.trim().toLowerCase() === 'omniroute'
+    ? getProviderDefinition('omniroute').modelExamples
+    : [];
   return {
     supported: discovery.status === 'supported',
-    models: discovery.models.map((model) => model.id),
+    models: [...new Set([...virtualModels, ...discovered])],
     discovery
   };
-}
-
-function concreteModel(value: string | undefined | null): value is string {
-  return Boolean(value?.trim()) && !/^(auto|default|free|latest)$/i.test(value!.trim());
 }
 
 function shouldProbeNext(diagnostic: ProviderDiagnosticResult): boolean {
@@ -212,16 +219,19 @@ export async function diagnoseProviderConnection(provider: Provider, preferredMo
     };
   }
 
-  const discoveredIds = discovery.models.map((model) => model.id).filter(concreteModel);
-  const examples = getProviderDefinition(provider.type).modelExamples.filter(concreteModel);
-  const preferred = concreteModel(preferredModel)
+  const providerType = provider.type.trim().toLowerCase();
+  const discoveredIds = discovery.models.map((model) => model.id).filter((model) => isExecutableProviderModel(providerType, model));
+  const examples = getProviderDefinition(providerType).modelExamples.filter((model) => isExecutableProviderModel(providerType, model));
+  const preferred = isExecutableProviderModel(providerType, preferredModel)
     ? preferredModel.trim()
-    : concreteModel(provider.defaultModel)
+    : isExecutableProviderModel(providerType, provider.defaultModel)
       ? provider.defaultModel.trim()
       : undefined;
-  const fallbackExamples = discovery.status === 'unsupported' && !['custom', 'nararouter'].includes(provider.type)
+  const fallbackExamples = providerType === 'omniroute'
     ? examples
-    : [];
+    : discovery.status === 'unsupported' && !['custom', 'nararouter'].includes(providerType)
+      ? examples
+      : [];
   const candidates = [...new Set([
     ...(preferred ? [preferred] : []),
     ...(!preferred ? discoveredIds : []),
@@ -256,7 +266,9 @@ export async function diagnoseProviderConnection(provider: Provider, preferredMo
         message: 'OK',
         model: candidate,
         modelsSupported: discovery.status === 'supported',
-        models: discoveredIds.length ? discoveredIds : fallbackExamples,
+        models: providerType === 'omniroute'
+          ? [...new Set([...examples, ...discoveredIds])]
+          : discoveredIds.length ? discoveredIds : fallbackExamples,
         attempts,
         diagnostic: { ...diagnostic, discovery },
         discovery
@@ -312,8 +324,8 @@ export async function* streamProviderCompletion(
   externalSignal?: AbortSignal
 ): AsyncIterable<ProviderStreamEvent> {
   const selectedModel = model.trim();
-  if (!selectedModel || /^(auto|default|free)$/i.test(selectedModel)) {
-    throw new LLMError('provider_model_required', 422, 'A concrete model ID is required.');
+  if (!isExecutableProviderModel(provider.type, selectedModel)) {
+    throw new LLMError('provider_model_required', 422, 'A concrete model ID is required. OmniRoute also supports its documented auto/* virtual model IDs.');
   }
   const adapter = providerAdapterFor(provider.type, provider.protocol);
   if (!adapter.streamChatCompletion) {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { isExecutableProviderModel } from './llm.js';
 import { assertProviderCredentials, normalizeBaseUrl, providerDefinition, resolveProviderBaseUrl } from './providers.js';
 import { getProviderDefinition, normalizeProviderConfig } from './providers/index.js';
 
@@ -43,6 +44,32 @@ describe('provider catalog and base URLs', () => {
     expect(providerDefinition('nararouter').adapter).toBe('openai-compatible');
     expect(getProviderDefinition('anthropic').protocol).toBe('anthropic');
     expect(getProviderDefinition('gemini').protocol).toBe('gemini');
+  });
+
+  it('defines OmniRoute as an optional OpenAI-compatible gateway', () => {
+    const definition = getProviderDefinition('omniroute');
+    expect(definition.protocol).toBe('openai-compatible');
+    expect(definition.defaultBaseUrl).toBeNull();
+    expect(definition.apiKeyRequired).toBe(true);
+    expect(definition.modelExamples).toContain('auto');
+
+    const normalized = normalizeProviderConfig({
+      providerType: 'omniroute',
+      apiKey: 'endpoint-key',
+      baseUrl: 'http://127.0.0.1:20128/v1/chat/completions',
+      selectedModel: 'auto/coding:fast',
+      allowLocalNetwork: true
+    });
+    expect(normalized.normalizedBaseUrl).toBe('http://127.0.0.1:20128/v1');
+    expect(normalized.resolvedModelsUrl).toBe('http://127.0.0.1:20128/v1/models');
+    expect(normalized.resolvedChatUrl).toBe('http://127.0.0.1:20128/v1/chat/completions');
+  });
+
+  it('allows OmniRoute virtual auto models without weakening other providers', () => {
+    expect(isExecutableProviderModel('omniroute', 'auto')).toBe(true);
+    expect(isExecutableProviderModel('omniroute', 'auto/coding:fast')).toBe(true);
+    expect(isExecutableProviderModel('openrouter', 'auto')).toBe(false);
+    expect(isExecutableProviderModel('openrouter', 'openai/gpt-4.1-mini')).toBe(true);
   });
 
   it('requires credentials according to provider capabilities', () => {
