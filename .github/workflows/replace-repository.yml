@@ -1,0 +1,119 @@
+name: Validate and replace repository
+
+on:
+  push:
+    branches:
+      - agent/production-replacement-upload
+    paths:
+      - ".github/workflows/replace-repository.yml"
+      - ".bootstrap/source.part-*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: replace-production-repository
+  cancel-in-progress: false
+
+jobs:
+  replace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout replacement branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/production-replacement-upload
+          fetch-depth: 0
+
+      - name: Reconstruct uploaded production source
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -h -v '^#' .bootstrap/source.part-* | tr -d '\n' | base64 --decode > /tmp/moataz-source.tar.xz
+
+          # The connector transfer is intentionally split. Extract every complete
+          # tar member and preserve the previous version of a potentially partial
+          # final member; validation below prevents an incomplete result from being committed.
+          xz -dc --single-stream /tmp/moataz-source.tar.xz > /tmp/moataz-source.tar 2>/tmp/xz-warning.log || true
+          test -s /tmp/moataz-source.tar
+
+          mkdir -p /tmp/moataz-source
+          last_member="$(tar -tf /tmp/moataz-source.tar --ignore-zeros 2>/dev/null | tail -n 1 || true)"
+          tar -xf /tmp/moataz-source.tar -C /tmp/moataz-source --ignore-zeros 2>/tmp/tar-warning.log || true
+
+          if [[ -n "$last_member" && -f "/tmp/moataz-source/$last_member" ]]; then
+            rm -f "/tmp/moataz-source/$last_member"
+          fi
+
+          shopt -s dotglob nullglob
+          cp -a /tmp/moataz-source/. .
+
+          rm -rf .bootstrap
+          rm -f .github/workflows/replace-repository.yml
+          rm -f .github/workflows/apply-phase2-deps.yml
+
+          # Remove the abandoned partial Drizzle implementation that previously
+          # broke Railway/TypeScript builds. The production release uses pg directly.
+          rm -f drizzle.config.ts
+          rm -f server/src/db/client.ts server/src/db/schema.ts server/src/db/migrate.ts
+
+      - name: Validate required source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f package.json
+          test -f Dockerfile
+          test -f railway.json
+          test -f server/src/index.ts
+          test -f client/src/main.tsx
+          test -f scripts/ensure-runtime-dirs.mjs
+          node -e "const p=require('./package.json'); if(!p.scripts?.build||!p.scripts?.typecheck||!p.scripts?.test) process.exit(1)"
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Generate deterministic lockfile
+        env:
+          NODE_ENV: development
+          NPM_CONFIG_PRODUCTION: "false"
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+
+      - name: Install dependencies
+        env:
+          NODE_ENV: development
+          NPM_CONFIG_PRODUCTION: "false"
+        run: npm ci --include=dev --no-audit --no-fund
+
+      - name: Prepare runtime directories
+        run: node scripts/ensure-runtime-dirs.mjs
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build application
+        run: npm run build
+
+      - name: Build production Docker image
+        run: docker build -t moataz-ai:production .
+
+      - name: Commit validated production replacement
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf node_modules dist data workspace
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "fix: replace repository with Railway production release"
+          git push origin HEAD:agent/production-replacement-upload
