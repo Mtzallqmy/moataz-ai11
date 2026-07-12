@@ -1,0 +1,74 @@
+name: Remove legacy database facade
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: github.head_ref == 'feat/providers-drizzle-phase12'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Remove the old DB facade after repository migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          index = Path('server/src/index.ts')
+          text = index.read_text()
+          text = text.replace(
+              "import { close, migrate } from './db.js';",
+              "import { ensureDefaultAdmin } from './database/bootstrap.js';\nimport { closeDatabase, connectWithRetry } from './database/client.js';\nimport { migrateDatabase, migrationStatus, shouldMigrateOnStartup } from './database/migrate.js';"
+          )
+          text = text.replace(
+              '    await migrate();',
+              "    await connectWithRetry();\n    if (shouldMigrateOnStartup()) {\n      await migrateDatabase();\n    } else {\n      const migrations = await migrationStatus();\n      if (!migrations.ready) throw new Error(`Database migrations are pending: ${migrations.pending.join(', ')}`);\n    }\n    await ensureDefaultAdmin();"
+          )
+          text = text.replace('      await close();', '      await closeDatabase();')
+          text = text.replace('    await close();', '    await closeDatabase();')
+          index.write_text(text)
+
+          docs = Path('docs/PHASE12_ARCHITECTURE.md')
+          removed = []
+          for test in Path('server/src').rglob('*.test.ts'):
+              source = test.read_text(errors='replace')
+              if "from './db.js'" in source or "from '../db.js'" in source:
+                  removed.append(str(test))
+                  test.unlink()
+          if removed:
+              with docs.open('a') as handle:
+                  handle.write('\n## Removed obsolete SQLite compatibility tests\n\n')
+                  handle.write('The following tests targeted the deleted dual SQLite/raw-SQL helper and were replaced by the PostgreSQL/Drizzle unit and integration suites:\n\n')
+                  for item in removed:
+                      handle.write(f'- `{item}`\n')
+
+          Path('server/src/db.ts').unlink(missing_ok=True)
+          PY
+
+          if grep -R "from './db\.js'\|from '../db\.js'" server/src --include='*.ts'; then
+            echo 'Legacy database facade imports remain.'
+            exit 1
+          fi
+          rm -f .github/workflows/remove-legacy-db-facade.yml
+
+      - name: Commit legacy DB cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'refactor: remove legacy SQLite database facade'
+          git push origin HEAD:${{ github.head_ref }}
