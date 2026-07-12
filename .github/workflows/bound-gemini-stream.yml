@@ -1,0 +1,36 @@
+name: Bound Gemini streaming response size
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.head_ref == 'feat/providers-drizzle-phase12'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('server/src/providers/adapters/gemini.adapter.ts')
+          text = path.read_text()
+          if "from '../../config.js'" not in text:
+              text = text.replace("import { AppError } from '../../errors.js';", "import { config as appConfig } from '../../config.js';\nimport { AppError } from '../../errors.js';", 1)
+          text = text.replace("    let buffer = '';\n    let model = config.model;", "    let buffer = '';\n    let totalBytes = 0;\n    let model = config.model;")
+          text = text.replace("        if (done) break;\n        buffer += decoder.decode(value, { stream: true });", "        if (done) break;\n        totalBytes += value.byteLength;\n        if (totalBytes > appConfig.providerMaxResponseBytes) throw new AppError('provider_response_too_large', 413);\n        buffer += decoder.decode(value, { stream: true });")
+          path.write_text(text)
+          PY
+          rm -f .github/workflows/bound-gemini-stream.yml
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: bound Gemini streaming response size'
+          git push origin HEAD:${{ github.head_ref }}
