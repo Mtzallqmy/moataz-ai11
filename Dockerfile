@@ -3,34 +3,19 @@
 FROM node:20-bookworm-slim AS build
 WORKDIR /app
 
-# Railway may inject NODE_ENV=production during image builds. The build stage
-# still needs ESLint, TypeScript, Vite and Vitest from devDependencies.
 ENV CI=true \
     NODE_ENV=development \
     NPM_CONFIG_PRODUCTION=false
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-     python3 \
-     make \
-     g++ \
-     ca-certificates \
+  && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json .npmrc ./
-# npm executes the package postinstall hook during npm ci, so the hook must be
-# available before the rest of the source tree is copied.
 COPY scripts/ensure-runtime-dirs.mjs ./scripts/ensure-runtime-dirs.mjs
-
-# Keep this command compatible with Railway's Dockerfile parser. A BuildKit
-# cache mount was removed because Railway requires an explicit cache id and
-# rejected the Dockerfile before the build started.
 RUN npm ci --include=dev --no-audit --no-fund
 
 COPY . .
-
-# Validation remains in GitHub Actions. Railway only performs the production
-# build so deploys are deterministic and do not spend minutes rerunning tests.
 RUN npm run build \
   && npm prune --omit=dev --no-audit --no-fund \
   && npm cache clean --force
@@ -48,9 +33,10 @@ RUN apt-get update \
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
+COPY --from=build --chown=node:node /app/drizzle ./drizzle
 
-RUN mkdir -p /app/data /app/workspace \
-  && chown -R node:node /app/data /app/workspace
+RUN mkdir -p /app/workspace \
+  && chown -R node:node /app/workspace
 
 USER node
 EXPOSE 8080

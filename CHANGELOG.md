@@ -2,6 +2,17 @@
 
 All notable changes are documented here. The project version is synchronized with `package.json`.
 
+## [2.0.0] — 2026-07-12
+
+### Provider system and PostgreSQL/Drizzle
+
+- Added a central provider registry and protocol-specific adapters.
+- Added deterministic Base URL normalization, redirect-aware SSRF protection, bounded model discovery, inference probes, streaming, tool calls, and structured bilingual diagnostics.
+- Added draft/testing/ready/error provider lifecycle states; only inference-verified providers can serve chat or Telegram.
+- Replaced runtime SQLite/dual-database behavior with PostgreSQL/Supabase and Drizzle ORM.
+- Added tracked, additive migrations and typed repositories for authentication, providers, integrations, chats, messages, attachments, agent runs, steps, tool executions, workspaces, files metadata, tickets, and audit logs.
+- Removed the production dependency on `better-sqlite3` and moved CI integration tests to PostgreSQL 16.
+
 ## [1.5.0] — 2026-07-11
 
 ### Provider recovery, sessions, attachments, and multi-agent execution

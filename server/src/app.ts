@@ -11,6 +11,7 @@ import { routes, type RuntimeStatus } from './routes.js';
 import { terminalRoutes } from './terminal.js';
 import { AppError } from './errors.js';
 import { logger } from './logger.js';
+import { redactSecrets } from './redaction.js';
 
 const defaultRuntimeStatus: RuntimeStatus = {
   telegram: () => ({ enabled: false, botCount: 0, configuredCount: 0, discoveryOnlyCount: 0 }),
@@ -28,6 +29,53 @@ function isProbeRequest(req: Request): boolean {
 
 function isAttachmentUpload(req: Request): boolean {
   return req.method === 'POST' && /^\/api\/chats\/[0-9a-f-]{36}\/attachments$/i.test(req.path);
+}
+
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function errorEnvelope(input: {
+  code: string;
+  status: number;
+  requestId?: string | undefined;
+  details?: unknown;
+  fallbackMessage?: string | undefined;
+}) {
+  const details = objectRecord(redactSecrets(input.details));
+  const message = typeof details.message === 'string'
+    ? details.message
+    : typeof details.providerMessage === 'string'
+      ? details.providerMessage
+      : input.fallbackMessage ?? input.code;
+  const messageAr = typeof details.userMessageAr === 'string'
+    ? details.userMessageAr
+    : typeof details.messageAr === 'string'
+      ? details.messageAr
+      : undefined;
+  const retryable = details.retryable === true;
+  const providerRequestId = typeof details.upstreamRequestId === 'string'
+    ? details.upstreamRequestId
+    : typeof details.providerRequestId === 'string'
+      ? details.providerRequestId
+      : undefined;
+  const payload = {
+    code: input.code,
+    message,
+    ...(messageAr ? { messageAr } : {}),
+    retryable,
+    httpStatus: input.status,
+    ...(input.requestId ? { requestId: input.requestId } : {}),
+    ...(providerRequestId ? { providerRequestId } : {})
+  };
+  return {
+    success: false,
+    error: payload,
+    code: input.code,
+    message,
+    ...(Object.keys(details).length > 0 ? { details } : {}),
+    ...(input.requestId ? { requestId: input.requestId } : {})
+  };
 }
 
 export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
@@ -118,7 +166,7 @@ export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     skip: isProbeRequest,
-    message: { error: 'rate_limited' }
+    message: { success: false, error: { code: 'rate_limited', message: 'Too many requests.', retryable: true, httpStatus: 429 } }
   }));
   app.use(['/api/auth/login', '/api/login'], rateLimit({
     windowMs: 15 * 60_000,
@@ -126,21 +174,21 @@ export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     skipSuccessfulRequests: true,
-    message: { error: 'login_rate_limited' }
+    message: { success: false, error: { code: 'login_rate_limited', message: 'Too many login attempts.', retryable: true, httpStatus: 429 } }
   }));
   app.use('/api/auth/refresh', rateLimit({
     windowMs: 15 * 60_000,
     limit: 30,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
-    message: { error: 'rate_limited' }
+    message: { success: false, error: { code: 'rate_limited', message: 'Too many requests.', retryable: true, httpStatus: 429 } }
   }));
   app.use('/api/chats', rateLimit({
     windowMs: 60_000,
     limit: 60,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
-    message: { error: 'rate_limited' }
+    message: { success: false, error: { code: 'rate_limited', message: 'Too many requests.', retryable: true, httpStatus: 429 } }
   }));
 
   authRoutes(app);
@@ -148,7 +196,8 @@ export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
   routes(app, runtimeStatus);
 
   app.use('/api', (_req, res) => {
-    res.status(404).json({ error: 'api_not_found' });
+    const id = typeof res.locals.requestId === 'string' ? res.locals.requestId : undefined;
+    res.status(404).json(errorEnvelope({ code: 'api_not_found', status: 404, requestId: id }));
   });
 
   const clientDist = path.resolve('dist/client');
@@ -165,21 +214,27 @@ export function createApp(runtimeStatus: RuntimeStatus = defaultRuntimeStatus) {
 
   app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     const requestIdValue = typeof res.locals.requestId === 'string' ? res.locals.requestId : undefined;
-    const parserError = error !== null && typeof error === 'object' && !Array.isArray(error) ? error as Record<string, unknown> : {};
+    const parserError = objectRecord(error);
     if (parserError.type === 'entity.too.large') {
-      res.status(413).json({ error: 'request_too_large', requestId: requestIdValue });
+      res.status(413).json(errorEnvelope({ code: 'request_too_large', status: 413, requestId: requestIdValue }));
       return;
     }
     if (error instanceof AppError) {
       logger.warn('request_failed', { requestId: requestIdValue, code: error.code, status: error.status });
-      res.status(error.status).json({ error: error.code, ...(error.details !== undefined ? { details: error.details } : {}), requestId: requestIdValue });
+      res.status(error.status).json(errorEnvelope({
+        code: error.code,
+        status: error.status,
+        requestId: requestIdValue,
+        details: error.details,
+        fallbackMessage: error.message
+      }));
       return;
     }
     logger.error('request_failed', {
       requestId: requestIdValue,
       error: error instanceof Error ? error.message : String(error)
     });
-    res.status(500).json({ error: 'internal_error', requestId: requestIdValue });
+    res.status(500).json(errorEnvelope({ code: 'internal_error', status: 500, requestId: requestIdValue }));
   });
 
   return app;
