@@ -1,0 +1,26 @@
+name: Apply final PostgreSQL CI pipeline
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.head_ref == 'feat/providers-drizzle-phase12'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - run: |
+          set -euo pipefail
+          mv .github/ci.phase12.yml .github/workflows/ci.yml
+          rm -f .github/workflows/apply-final-ci.yml
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'ci: apply final PostgreSQL phase 1-2 pipeline'
+          git push origin HEAD:${{ github.head_ref }}
