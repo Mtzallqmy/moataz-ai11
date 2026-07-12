@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { config as appConfig } from '../../config.js';
 import { AppError } from '../../errors.js';
 import type { Msg } from '../../llm-types.js';
 import { resolveProviderUrls } from '../base-url.js';
@@ -225,11 +226,14 @@ export class GeminiAdapter implements ProviderAdapter {
     const reader = transport.response.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let totalBytes = 0;
     let model = config.model;
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        totalBytes += value.byteLength;
+        if (totalBytes > appConfig.providerMaxResponseBytes) throw new AppError('provider_response_too_large', 413);
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() ?? '';
