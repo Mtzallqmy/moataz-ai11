@@ -11,14 +11,14 @@ const adminUrl = new URL(source.toString());
 adminUrl.pathname = '/postgres';
 const legacyUrl = new URL(source.toString());
 legacyUrl.pathname = `/${databaseName}`;
-let legacyPool: Pool;
+let legacyPool: Pool | undefined;
 
 beforeAll(async () => {
   const admin = new Pool({ connectionString: adminUrl.toString(), ssl: false });
   await admin.query(`CREATE DATABASE "${databaseName}"`);
   await admin.end();
   legacyPool = new Pool({ connectionString: legacyUrl.toString(), ssl: false });
-  await legacyPool.query(`
+  await legacyPool!.query(`
     CREATE TABLE users (
       id text PRIMARY KEY,
       email text NOT NULL UNIQUE,
@@ -84,7 +84,7 @@ beforeAll(async () => {
       created_at timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
-  await legacyPool.query(`
+  await legacyPool!.query(`
     INSERT INTO users(id,email,password_hash,name,role,is_active) VALUES ('u1','legacy@example.com','hash','Legacy','admin',1);
     INSERT INTO providers(id,user_id,name,type,base_url,api_key_enc,default_model,validation_status,is_active)
       VALUES ('p1','u1','Legacy Provider','openrouter','https://openrouter.ai/api/v1','ciphertext','model/a','verified',1);
@@ -107,6 +107,7 @@ afterAll(async () => {
 
 describe('legacy PostgreSQL migration', () => {
   it('preserves records while backfilling typed provider and JSONB fields', async () => {
+    if (!legacyPool) throw new Error('legacy_pool_not_initialized');
     const db = drizzle(legacyPool);
     await migrate(db, { migrationsFolder: path.resolve(process.cwd(), 'drizzle') });
     const provider = await legacyPool.query<{
@@ -139,6 +140,6 @@ describe('legacy PostgreSQL migration', () => {
     expect(run.rows[0]?.finished_at).not.toBeNull();
 
     await migrate(db, { migrationsFolder: path.resolve(process.cwd(), 'drizzle') });
-    expect((await legacyPool.query(`SELECT count(*)::int AS count FROM providers WHERE id='p1'`)).rows[0].count).toBe(1);
+    expect((await legacyPool.query<{ count: number }>(`SELECT count(*)::int AS count FROM providers WHERE id='p1'`)).rows[0]!.count).toBe(1);
   });
 });

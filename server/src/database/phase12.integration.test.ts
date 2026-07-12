@@ -216,7 +216,7 @@ describe('websocket ticket, timeout, and shutdown behavior', () => {
     const isolated = new Pool({ connectionString, ssl: false, max: 1, statement_timeout: 50, query_timeout: 100 });
     await expect(isolated.query('SELECT pg_sleep(0.2)')).rejects.toBeDefined();
     await isolated.end();
-    expect(isolated.ended).toBe(true);
+    await expect(isolated.query('SELECT 1')).rejects.toBeDefined();
   });
 
   it('reports connection failures without echoing credentials', async () => {
