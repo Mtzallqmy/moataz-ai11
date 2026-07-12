@@ -1,32 +1,30 @@
-name: Verify production main
+name: Verify production build
 
 on:
   push:
     branches:
       - main
-    paths:
-      - ".github/workflows/verify-production-main.yml"
+  pull_request:
+    branches:
+      - main
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: replace-production-repository
-  cancel-in-progress: false
+  group: production-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  verify-main:
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 50
 
     steps:
-      - name: Checkout main
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
 
-      - name: Verify expected production structure
+      - name: Verify production structure
         shell: bash
         run: |
           set -euo pipefail
@@ -36,12 +34,14 @@ jobs:
           test -f railway.json
           test -f server/src/index.ts
           test -f server/src/config.ts
+          test -f server/src/db.ts
           test -f client/src/main.tsx
           test -f scripts/ensure-runtime-dirs.mjs
           test ! -e .bootstrap
           test ! -e .github/workflows/apply-phase2-deps.yml
           test ! -e drizzle.config.ts
-          test ! -e server/src/db/schema.ts
+          test ! -e drizzle
+          test ! -e server/src/database
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
@@ -72,37 +72,3 @@ jobs:
 
       - name: Build production Docker image
         run: docker build -t moataz-ai:production .
-
-      - name: Write verification marker and remove temporary workflows
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > PRODUCTION_READY.md <<'EOF'
-          # Production Ready
-
-          The `main` branch passed a clean Node.js 20 validation on GitHub Actions:
-
-          - dependency installation with `npm ci`
-          - ESLint
-          - TypeScript typecheck
-          - complete automated test suite
-          - frontend and backend production build
-          - production Docker image build
-
-          Railway readiness is checked through `/api/ready`; runtime deployment still requires the environment variables documented in `DEPLOYMENT.md` and `railway.env.example`.
-          EOF
-
-          rm -rf node_modules dist data workspace
-          rm -f .github/workflows/verify-production-main.yml
-          rm -f .github/workflows/finalize-production-upload.yml
-          rm -f .github/workflows/replace-repository.yml
-          rm -f .github/workflows/replace-and-promote.yml
-          rm -f .github/workflows/promote-production.yml
-          rm -f .github/workflows/apply-phase2-deps.yml
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --check
-          git commit -m "chore: record successful production validation"
-          git push origin HEAD:main

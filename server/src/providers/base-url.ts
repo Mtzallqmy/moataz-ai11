@@ -19,13 +19,21 @@ function stripKnownTerminalPath(pathname: string): string {
   return current;
 }
 
-function parseAbsoluteHttpUrl(raw: string): URL {
+function withDefaultProtocol(raw: string): string {
   const trimmed = raw.trim();
+  const looksLikeHostPort = /^(?:localhost|\[[^\]]+\]|(?:[a-z0-9-]+\.)*[a-z0-9-]+):\d+(?:[/?#]|$)/i.test(trimmed);
+  const hasExplicitScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) && !looksLikeHostPort;
+  if (hasExplicitScheme) return trimmed;
+  return `https://${trimmed.replace(/^\/\//, '')}`;
+}
+
+function parseAbsoluteHttpUrl(raw: string): URL {
+  const candidate = withDefaultProtocol(raw);
   let url: URL;
   try {
-    url = new URL(trimmed);
+    url = new URL(candidate);
   } catch {
-    throw new AppError('provider_base_url_invalid', 422, 'The provider Base URL must be an absolute HTTP or HTTPS URL.', {
+    throw new AppError('provider_base_url_invalid', 422, 'The provider Base URL must be a valid HTTP or HTTPS URL.', {
       stage: 'invalid_request', retryable: false
     });
   }
@@ -55,20 +63,31 @@ export function normalizeProviderUrls(
   definition: ProviderDefinition,
   suppliedBaseUrl: string | null | undefined
 ): NormalizedProviderUrls {
-  const rawBaseUrl = suppliedBaseUrl?.trim() || definition.defaultBaseUrl;
+  const supplied = suppliedBaseUrl?.trim() || null;
+  let rawBaseUrl = supplied || definition.defaultBaseUrl;
+
+  if (supplied && definition.defaultBaseUrl) {
+    const suppliedUrl = parseAbsoluteHttpUrl(supplied);
+    const defaultUrl = parseAbsoluteHttpUrl(definition.defaultBaseUrl);
+    const suppliedPath = suppliedUrl.pathname.replace(/\/+$/, '') || '/';
+    if (suppliedUrl.origin === defaultUrl.origin && suppliedPath === '/') {
+      rawBaseUrl = definition.defaultBaseUrl;
+    }
+  }
+
   if (!rawBaseUrl) {
     return {
-      rawBaseUrl: suppliedBaseUrl?.trim() || null,
+      rawBaseUrl: supplied,
       normalizedBaseUrl: null,
       resolvedModelsUrl: null,
       resolvedChatUrl: null,
       resolvedResponsesUrl: null
     };
   }
-  if (suppliedBaseUrl && !definition.allowBaseUrlOverride) {
-    const supplied = parseAbsoluteHttpUrl(suppliedBaseUrl).toString().replace(/\/+$/, '');
+  if (supplied && !definition.allowBaseUrlOverride) {
+    const suppliedUrl = parseAbsoluteHttpUrl(supplied).toString().replace(/\/+$/, '');
     const expected = definition.defaultBaseUrl ? parseAbsoluteHttpUrl(definition.defaultBaseUrl).toString().replace(/\/+$/, '') : null;
-    if (expected && supplied !== expected) {
+    if (expected && suppliedUrl !== expected) {
       throw new AppError('provider_base_url_override_forbidden', 422, 'This provider does not allow a custom Base URL.', {
         stage: 'invalid_request', retryable: false
       });
@@ -76,7 +95,7 @@ export function normalizeProviderUrls(
   }
   const normalized = parseAbsoluteHttpUrl(rawBaseUrl).toString().replace(/\/+$/, '');
   return {
-    rawBaseUrl: suppliedBaseUrl?.trim() || null,
+    rawBaseUrl: supplied,
     normalizedBaseUrl: normalized,
     resolvedModelsUrl: joinEndpoint(normalized, definition.modelsPath),
     resolvedChatUrl: joinEndpoint(normalized, definition.chatPath),
