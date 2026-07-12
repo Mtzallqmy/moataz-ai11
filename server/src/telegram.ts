@@ -75,7 +75,7 @@ const commandDescriptions = [
 
 function parseMeta(raw: Record<string, unknown> | string | null): Record<string, unknown> {
   if (!raw) return {};
-  if (typeof raw === 'object' && !Array.isArray(raw)) return raw;
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, unknown>;
   try {
     const value = JSON.parse(raw) as unknown;
     return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};

@@ -196,7 +196,7 @@ export function chatRoutes(app: Express): void {
         title: input.title ?? 'New chat',
         providerId: input.providerId ?? null,
         model,
-        mode: input.mode
+        mode: input.mode ?? 'agent'
       });
       res.status(201).json(row);
     } catch (error) { next(error); }
@@ -291,7 +291,8 @@ export function chatRoutes(app: Express): void {
       activeChats.add(chatId);
       locked = true;
 
-      const attachmentRows = await pendingAttachments(input.attachmentIds, chatId, req.user!.id);
+      const attachmentIds = input.attachmentIds ?? [];
+      const attachmentRows = await pendingAttachments(attachmentIds, chatId, req.user!.id);
       const selected = await resolveProviderForChat(req.user!.id, chat);
       const contextRows = await messagesRepository.context(chatId, config.maxContextMessages);
       userMessageId = cryptoId();
@@ -304,7 +305,7 @@ export function chatRoutes(app: Express): void {
         providerId: selected.row.id,
         model: chat.model,
         userMessage: { id: userMessageId, content: displayContent, idempotencyKey: key },
-        attachmentIds: input.attachmentIds
+        attachmentIds
       });
 
       const attachmentData = await attachmentContext(attachmentRows);
@@ -318,8 +319,11 @@ export function chatRoutes(app: Express): void {
           : 'You are Moataz AI. Reply in the user language. Do not request or invoke tools.';
       const promptContent = `${input.content}${attachmentData.text}`.trim();
       const messages = buildAgentMessages(contextRows, promptContent, systemPrompt);
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage?.role === 'user' && attachmentData.images.length > 0) lastMessage.images = attachmentData.images;
+      const lastIndex = messages.length - 1;
+      const lastMessage = messages[lastIndex];
+      if (lastMessage?.role === 'user' && attachmentData.images.length > 0) {
+        messages[lastIndex] = { ...lastMessage, images: attachmentData.images };
+      }
       const credentials = await integrationsForUser(req.user!.id);
       const toolCalls: ToolCallRecord[] = [];
       let answer = '';
@@ -391,9 +395,9 @@ export function chatRoutes(app: Express): void {
         userId: req.user!.id,
         assistantMessage: { id: assistantMessageId, chatId, content: answer, toolCalls, idempotencyKey: key },
         summary: { mode: chat.mode, toolCalls: toolCalls.length },
-        inputTokens: usage?.inputTokens,
-        outputTokens: usage?.outputTokens,
-        totalTokens: usage?.totalTokens
+        ...(usage?.inputTokens !== undefined ? { inputTokens: usage.inputTokens } : {}),
+        ...(usage?.outputTokens !== undefined ? { outputTokens: usage.outputTokens } : {}),
+        ...(usage?.totalTokens !== undefined ? { totalTokens: usage.totalTokens } : {})
       });
       await chatsRepository.touchAndSetInitialTitle(req.user!.id, chatId, (input.content || attachmentRows[0]?.name || 'Attachment').slice(0, 60));
       const attachmentSummaries = attachmentRows.map(summarizeAttachment);

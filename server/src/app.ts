@@ -38,9 +38,9 @@ function objectRecord(value: unknown): Record<string, unknown> {
 function errorEnvelope(input: {
   code: string;
   status: number;
-  requestId?: string;
+  requestId?: string | undefined;
   details?: unknown;
-  fallbackMessage?: string;
+  fallbackMessage?: string | undefined;
 }) {
   const details = objectRecord(redactSecrets(input.details));
   const message = typeof details.message === 'string'

@@ -124,7 +124,7 @@ export async function validateIntegration(type: IntegrationType, rawToken: strin
       url.searchParams.set('count', '1');
       const response = await fetchWithValidatedRedirects(url.toString(), {
         method: 'GET', headers: { Accept: 'application/json', 'X-Subscription-Token': token }
-      }, { timeoutMs: config.webFetchTimeoutMs, maxRedirects: 0 });
+      }, { timeoutMs: config.webFetchTimeoutMs, maxRedirects: 0, allowPrivate: false });
       const payload = await jsonFromResponse(response);
       if (!response.ok) throw Object.assign(new Error('Brave Search validation failed.'), { status: response.status, response: { data: payload } });
       return { service: 'Brave Search', verified: true };
@@ -175,7 +175,7 @@ export const integrationsService = {
       encryptedToken: encrypt(token), meta: normalizeIntegrationMeta(input.type, input.meta)
     });
   },
-  async update(userId: string, id: string, input: { name?: string; token?: string; meta?: Record<string, unknown> }): Promise<IntegrationRecord> {
+  async update(userId: string, id: string, input: { name?: string | undefined; token?: string | undefined; meta?: Record<string, unknown> | undefined }): Promise<IntegrationRecord> {
     const existing = await integrationsRepository.findOwned(userId, id);
     if (!existing) throw new AppError('integration_not_found', 404);
     const token = input.token ? normalizeIntegrationToken(existing.type as IntegrationType, input.token) : decrypt(existing.token_enc);
