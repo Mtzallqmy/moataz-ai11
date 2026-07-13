@@ -1,0 +1,176 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Arabic & RTL Enhancements */
+:root {
+  --font-arabic: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans Arabic", "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  font-family: var(--font-arabic);
+  font-feature-settings: "tnum";
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar for dark theme */
+.dark ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 3px;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Chat message styles */
+.message-bubble {
+  @apply max-w-[85%] px-4 py-3 rounded-2xl text-sm leading-relaxed;
+}
+
+.user-message {
+  @apply bg-primary-600 text-white ml-auto rounded-br-md;
+}
+
+.assistant-message {
+  @apply bg-dark-800 text-dark-100 mr-auto rounded-bl-md border border-dark-700;
+}
+
+/* Streaming cursor */
+.streaming-cursor::after {
+  content: '▋';
+  animation: blink 1s step-end infinite;
+  margin-right: 2px;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* Card styles */
+.card {
+  @apply bg-white dark:bg-dark-800 border border-dark-200 dark:border-dark-700 rounded-2xl shadow-soft transition-all duration-200;
+}
+
+.card:hover {
+  @apply shadow-glow border-primary-200 dark:border-primary-800;
+}
+
+/* Button styles */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all active:scale-[0.985] disabled:opacity-60 disabled:cursor-not-allowed;
+}
+
+.btn-primary {
+  @apply bg-primary-600 hover:bg-primary-700 text-white shadow-sm;
+}
+
+.btn-secondary {
+  @apply bg-dark-100 dark:bg-dark-700 hover:bg-dark-200 dark:hover:bg-dark-600 text-dark-900 dark:text-white border border-dark-200 dark:border-dark-600;
+}
+
+.btn-ghost {
+  @apply hover:bg-dark-100 dark:hover:bg-dark-800 text-dark-600 dark:text-dark-300;
+}
+
+.btn-danger {
+  @apply bg-red-600 hover:bg-red-700 text-white;
+}
+
+/* Input styles */
+.input {
+  @apply w-full px-4 py-3 bg-white dark:bg-dark-900 border border-dark-200 dark:border-dark-700 rounded-xl text-sm placeholder:text-dark-400 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-500 transition-all;
+}
+
+.textarea {
+  @apply input min-h-[52px] max-h-[200px] resize-y leading-relaxed;
+}
+
+/* Sidebar */
+.sidebar {
+  @apply bg-white dark:bg-dark-900 border-l border-dark-200 dark:border-dark-700 flex flex-col h-full;
+}
+
+/* Status indicators */
+.status-dot {
+  @apply w-2 h-2 rounded-full;
+}
+
+.status-connected { @apply bg-emerald-500; }
+.status-disconnected { @apply bg-red-500; }
+.status-connecting { @apply bg-amber-500 animate-pulse; }
+
+/* Provider badge */
+.provider-badge {
+  @apply px-2.5 py-1 text-xs font-medium rounded-full border;
+}
+
+/* Table */
+.table {
+  @apply w-full text-sm;
+}
+
+.table th {
+  @apply text-right font-medium text-dark-500 dark:text-dark-400 pb-3 border-b border-dark-200 dark:border-dark-700;
+}
+
+.table td {
+  @apply py-3 border-b border-dark-100 dark:border-dark-800 text-dark-700 dark:text-dark-200;
+}
+
+/* Modal */
+.modal {
+  @apply fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4;
+}
+
+.modal-content {
+  @apply bg-white dark:bg-dark-900 rounded-3xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-auto border border-dark-200 dark:border-dark-700;
+}
+
+/* Toast customization via sonner */
+.sonner-toast {
+  font-family: var(--font-arabic);
+}
+
+/* Loading skeleton */
+.skeleton {
+  @apply animate-pulse bg-dark-200 dark:bg-dark-700 rounded;
+}
+
+/* Agent step */
+.agent-step {
+  @apply flex items-start gap-3 p-3 rounded-xl border border-dark-200 dark:border-dark-700 bg-dark-50 dark:bg-dark-800/50;
+}
+
+.agent-step.completed {
+  @apply border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/30;
+}
+
+.agent-step.active {
+  @apply border-primary-300 dark:border-primary-700 bg-primary-50 dark:bg-primary-950/30;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .message-bubble {
+    max-width: 92%;
+  }
+  
+  .sidebar {
+    @apply fixed inset-y-0 right-0 z-40 w-72 transform transition-transform shadow-2xl;
+  }
+  
+  .sidebar.closed {
+    transform: translateX(100%);
+  }
+}
