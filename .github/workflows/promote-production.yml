@@ -1,0 +1,42 @@
+name: Promote validated production
+
+on:
+  push:
+    branches:
+      - agent/production-replacement-upload
+
+permissions:
+  contents: write
+
+concurrency:
+  group: promote-validated-production
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    if: github.event.head_commit.message == 'fix: replace repository with Railway production release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout validated production commit
+        uses: actions/checkout@v4
+        with:
+          ref: agent/production-replacement-upload
+          fetch-depth: 0
+
+      - name: Confirm validated source and fast-forward main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f package.json
+          test -f Dockerfile
+          test -f railway.json
+          test -f server/src/index.ts
+          test -f client/src/main.tsx
+          test ! -e .bootstrap
+          test ! -e .github/workflows/apply-phase2-deps.yml
+          git fetch origin main
+          git merge-base --is-ancestor origin/main HEAD
+          git diff --check origin/main...HEAD
+          git push origin HEAD:main
